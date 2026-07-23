@@ -2,16 +2,68 @@ const express = require('express');
 const crypto = require('crypto');
 const cors = require('cors');
 const axios = require('axios');
+const path = require('path');
+const fs = require('fs');
+const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const nodemailer = require('nodemailer');
+const { initializeApp: initializeAdminApp, cert } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
 const { initializeApp } = require('firebase/app');
-const { getFirestore, doc, runTransaction, serverTimestamp } = require('firebase/firestore');
+const { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  getDocs, 
+  updateDoc, 
+  deleteDoc, 
+  collection, 
+  query, 
+  where, 
+  runTransaction, 
+  serverTimestamp 
+} = require('firebase/firestore');
+// Local credentials live in the ignored .env.local file; deployed platforms
+// provide the same values through their environment.
+require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
 require('dotenv').config();
+
+// Fail closed: privileged access must never use shared fallback credentials.
+const REQUIRED_ENV_VARS = [
+  'ADMIN_USERNAME',
+  'ADMIN_PASSWORD',
+  'JWT_SECRET',
+  'FIREBASE_SERVICE_ACCOUNT_JSON',
+  'RECAPTCHA_SECRET_KEY'
+];
+const missingEnvVars = REQUIRED_ENV_VARS.filter((key) => !process.env[key]?.trim());
+if (missingEnvVars.length > 0) {
+  console.error(`[FATAL] Missing required environment variable(s): ${missingEnvVars.join(', ')}.`);
+  console.error('[FATAL] Refusing to start because secure admin and Firebase Custom Token authentication are not configured.');
+  process.exit(1);
+}
+
+let firebaseServiceAccount;
+try {
+  firebaseServiceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  if (firebaseServiceAccount.private_key) {
+    firebaseServiceAccount.private_key = firebaseServiceAccount.private_key.replace(/\\n/g, '\n');
+  }
+  initializeAdminApp({ credential: cert(firebaseServiceAccount) });
+} catch (error) {
+  console.error('[FATAL] FIREBASE_SERVICE_ACCOUNT_JSON is invalid or could not initialize Firebase Admin.', error.message);
+  process.exit(1);
+}
+
+const adminAuth = getAuth();
 
 // Public Firebase config used to initialize the client SDK on the backend
 const firebaseConfig = {
   apiKey: "AIzaSyB8Uarm1Wfr9gfCGhohvSBNpT3zBpzAyYQ",
   authDomain: "slime-business.firebaseapp.com",
   projectId: "slime-business",
-  storageBucket: "slime-business.firebasestorage.app",
+  storageBucket: "slime-business.appspot.com",
   messagingSenderId: "1056410131791",
   appId: "1:1056410131791:web:dbee93e059d2900d10b93a"
 };
@@ -21,115 +73,221 @@ const db = getFirestore(firebaseApp);
 
 const app = express();
 
-// Configure CORS to allow frontend communication
+// Configure CORS from deployment configuration while preserving local Vite dev.
+const localOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+const configuredOrigins = (process.env.ALLOWED_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const allowedOrigins = new Set([...localOrigins, ...configuredOrigins]);
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && !allowedOrigins.has(origin)) {
+    return res.status(403).json({ error: 'Origin is not allowed by CORS.' });
+  }
+  return next();
+});
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+    return callback(null, false);
+  },
   credentials: true
 }));
 
 app.use(express.json());
 
-const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY || '6LeIxAcTAAAAAGG-v2bB0aeM67KsFI7y64Cis09y';
+// Serve uploaded images statically
+app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
-/**
- * POST /api/verify-recaptcha
- * Verifies the Google reCAPTCHA v2 token server-side.
- */
-app.post('/api/verify-recaptcha', async (req, res) => {
-  const { token } = req.body;
-
-  if (!token) {
-    console.error('[reCAPTCHA] Missing verification token in request body');
-    return res.status(400).json({ success: false, error: 'reCAPTCHA token is required.' });
+// Configure Multer for File Uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const dir = path.join(__dirname, '../public/uploads');
+    if (!fs.existsSync(dir)){
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, dir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
   }
+});
+const upload = multer({ storage: storage });
+
+// Admin configuration
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const JWT_SECRET = process.env.JWT_SECRET;
+
+// JWT admin validation middleware
+function verifyAdminToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) return res.status(401).json({ error: 'Authorization header required' });
+  
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Token required' });
+  
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err || decoded.role !== 'admin') {
+      return res.status(403).json({ error: 'Invalid or unauthorized token' });
+    }
+    req.admin = decoded;
+    next();
+  });
+}
+
+// Customer identity always comes from a verified Firebase ID token, never a
+// client-supplied email address.
+async function verifyCustomerToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Firebase authentication is required.' });
 
   try {
-    console.log('[reCAPTCHA] Verifying token with Google API...');
-    const googleResponse = await axios.post(
-      'https://www.google.com/recaptcha/api/siteverify',
-      null,
-      {
-        params: {
-          secret: RECAPTCHA_SECRET_KEY,
-          response: token
-        }
-      }
-    );
-
-    const { success, 'error-codes': errorCodes } = googleResponse.data;
-    console.log(`[reCAPTCHA] Google verification success: ${success}`, errorCodes ? `, errors: ${errorCodes}` : '');
-
-    if (success) {
-      return res.status(200).json({ success: true });
-    } else {
-      return res.status(400).json({ success: false, error: 'reCAPTCHA challenge failed. Please try again.' });
+    const decodedToken = await adminAuth.verifyIdToken(token);
+    if (!decodedToken.email) {
+      return res.status(403).json({ error: 'The authenticated account has no email address.' });
     }
-  } catch (error) {
-    console.error('[reCAPTCHA] Server verification failed: ', error.message);
-    return res.status(500).json({ success: false, error: 'Internal server verification error.' });
+    req.customer = { uid: decodedToken.uid, email: decodedToken.email.toLowerCase() };
+    return next();
+  } catch {
+    return res.status(401).json({ error: 'Invalid or expired Firebase authentication token.' });
+  }
+}
+
+// Nodemailer SMTP Transporter
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: {
+    user: process.env.SMTP_USER || 'placeholder@example.com',
+    pass: process.env.SMTP_PASS || 'placeholderpass'
   }
 });
 
+// Reusable email sending utility
+async function sendEmail({ to, subject, html }) {
+  try {
+    // If no real SMTP keys are provided, fall back to console logging OTPs for easy developer workflow
+    if (!process.env.SMTP_USER || process.env.SMTP_USER === 'placeholder@example.com') {
+      console.warn(`\n=== [EMAIL FALLBACK] ===\nTo: ${to}\nSubject: ${subject}\nHTML: ${html}\n========================\n`);
+      return { messageId: 'fallback-id' };
+    }
+    const info = await transporter.sendMail({
+      from: `"FezySlimes" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+      to,
+      subject,
+      html
+    });
+    console.log(`[Email] Email sent to ${to}: ${info.messageId}`);
+    return info;
+  } catch (error) {
+    console.error(`[Email] Failed to send email to ${to}:`, error.message);
+    throw error;
+  }
+}
+
+// OTP Helpers
+function generateOTP() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+async function saveOTP(email, code, type) {
+  const otpRef = doc(db, 'otps', `${email.toLowerCase()}_${type}`);
+  await setDoc(otpRef, {
+    email: email.toLowerCase(),
+    code,
+    type,
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes expiry
+    verified: false,
+    createdAt: new Date()
+  });
+}
+
+async function verifyOTP(email, code, type) {
+  const otpRef = doc(db, 'otps', `${email.toLowerCase()}_${type}`);
+  const otpSnap = await getDoc(otpRef);
+  
+  if (!otpSnap.exists()) {
+    return { success: false, message: 'No OTP code requested.' };
+  }
+  
+  const data = otpSnap.data();
+  if (data.verified) {
+    return { success: false, message: 'This OTP has already been verified.' };
+  }
+  
+  const expiresAt = data.expiresAt.toDate ? data.expiresAt.toDate() : new Date(data.expiresAt);
+  if (new Date() > expiresAt) {
+    return { success: false, message: 'OTP has expired. Please request a new one.' };
+  }
+  
+  if (data.code !== code) {
+    return { success: false, message: 'Incorrect OTP code.' };
+  }
+  
+  await updateDoc(otpRef, { verified: true });
+  return { success: true };
+}
+
+// reCAPTCHA verification endpoint
+const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY;
+app.post('/api/verify-recaptcha', async (req, res) => {
+  const { token } = req.body;
+  if (!token) {
+    return res.status(400).json({ success: false, error: 'reCAPTCHA token is required.' });
+  }
+  try {
+    const googleResponse = await axios.post(
+      'https://www.google.com/recaptcha/api/siteverify',
+      null,
+      { params: { secret: RECAPTCHA_SECRET_KEY, response: token } }
+    );
+    const { success } = googleResponse.data;
+    if (success) {
+      return res.status(200).json({ success: true });
+    } else {
+      return res.status(400).json({ success: false, error: 'reCAPTCHA verification failed.' });
+    }
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Internal reCAPTCHA verification error.' });
+  }
+});
+
+// Paystack Key configurations
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 
-/**
- * POST /api/verify-payment
- * Triggered by frontend callback after payment completion.
- * Calls Paystack API to verify transaction details before creating order.
- */
+// Paystack payment verification endpoint (Feature 1)
 app.post('/api/verify-payment', async (req, res) => {
   const { reference, customerName, email, phone, address, landmark, notes, total, items } = req.body;
-
-  console.log(`[Verify] Starting payment verification for reference: ${reference}`);
-
   if (!reference) {
-    console.error('[Verify] Mising payment reference in request body');
     return res.status(400).json({ error: 'Transaction reference is required.' });
   }
-
   try {
-    // 1. Query Paystack Transaction Verification Endpoint
-    console.log(`[Verify] Contacting Paystack verification endpoint for: ${reference}`);
     const paystackResponse = await axios.get(
       `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
-      {
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
-        }
-      }
+      { headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` } }
     );
-
     const transactionData = paystackResponse.data.data;
-    console.log(`[Verify] Paystack returned status: ${transactionData.status}, amount: ${transactionData.amount} kobo`);
-
-    // 2. Validate Payment Integrity
+    
     if (transactionData.status !== 'success') {
-      console.error(`[Verify] Paystack payment failed. Status: ${transactionData.status}`);
-      return res.status(400).json({ error: 'Paystack payment transaction was not successful.' });
+      return res.status(400).json({ error: 'Paystack transaction was not successful.' });
     }
-
+    
     const expectedAmountKobo = Math.round(total * 100);
     if (transactionData.amount !== expectedAmountKobo) {
-      console.error(`[Verify] Payment amount mismatch. Expected: ${expectedAmountKobo} kobo, Got: ${transactionData.amount} kobo`);
-      return res.status(400).json({ 
-        error: `Payment amount mismatch. Expected: ${expectedAmountKobo} kobo, Paid: ${transactionData.amount} kobo.` 
-      });
+      return res.status(400).json({ error: 'Payment amount mismatch.' });
     }
 
-    // 3. Write Order inside a safe Firestore Transaction to prevent duplication
-    console.log(`[Verify] Initializing Firestore transaction for reference: ${reference}`);
     const orderDocRef = doc(db, 'orders', reference);
-
     const result = await runTransaction(db, async (transaction) => {
       const docSnapshot = await transaction.get(orderDocRef);
-      
       if (docSnapshot.exists()) {
-        console.log(`[Verify] Order for reference ${reference} already exists. Returning duplicate data.`);
         const existingData = docSnapshot.data();
-        return { 
-          orderId: existingData.orderId, 
-          trackingId: existingData.trackingId 
-        };
+        return { orderId: existingData.orderId, trackingId: existingData.trackingId };
       }
 
       const generatedOrderId = 'FS-' + new Date().getFullYear() + '-' + Math.floor(100000 + Math.random() * 900000);
@@ -140,48 +298,57 @@ app.post('/api/verify-payment', async (req, res) => {
         trackingId: generatedTrackingId,
         customer: {
           name: customerName,
-          email: email,
-          phone: phone,
-          address: address,
+          email: email.toLowerCase(),
+          phone,
+          address,
           landmark: landmark || '',
           notes: notes || ''
         },
         amount: total,
         paymentReference: reference,
         paymentStatus: 'Paid',
-        trackingStatus: 'Order Confirmed',
-        deliveryStatus: 'Order Confirmed',
-        items: items,
+        trackingStatus: 'Order Placed',
+        deliveryStatus: 'Order Placed',
+        confirmed: false, // will require post-payment confirmation via OTP (Feature 2B)
+        items,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
 
       transaction.set(orderDocRef, newOrder);
-      console.log(`[Verify] Transaction set successful. Generated Order ID: ${generatedOrderId}`);
       return { orderId: generatedOrderId, trackingId: generatedTrackingId };
     });
 
-    console.log(`[Verify] Verification and Firestore saving completed successfully for ref: ${reference}`);
+    // Send post-checkout Order Confirmation OTP (Feature 2B)
+    const confirmationOTP = generateOTP();
+    await saveOTP(email, confirmationOTP, 'order_' + reference);
+    await sendEmail({
+      to: email,
+      subject: `Verify Your FezySlimes Order - Code: ${confirmationOTP}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
+          <h2 style="color: #06b6d4; text-align: center;">Confirm Your FezySlimes Order 🤍</h2>
+          <p>Thank you for your payment! To finalize and confirm your order (Order ID: <b>${result.orderId}</b>), please enter the following 6-digit OTP code on the order status confirmation screen:</p>
+          <div style="background-color: #f8fafc; padding: 15px; text-align: center; border-radius: 8px; font-size: 24px; font-weight: bold; letter-spacing: 4px; color: #ec4899; margin: 20px 0;">
+            ${confirmationOTP}
+          </div>
+          <p style="color: #64748b; font-size: 12px; text-align: center;">This code will expire in 10 minutes. If you do not verify, your order is still recorded as Paid, but confirming helps us track and package your order faster!</p>
+        </div>
+      `
+    });
+
     return res.status(200).json({ 
       success: true, 
       orderId: result.orderId, 
       trackingId: result.trackingId 
     });
-
   } catch (error) {
     const errorDetails = error.response?.data?.message || error.message;
-    console.error('[Verify] Verification failed: ', errorDetails);
-    return res.status(500).json({ 
-      error: 'Backend payment verification failed.', 
-      details: errorDetails 
-    });
+    return res.status(500).json({ error: 'Backend payment verification failed.', details: errorDetails });
   }
 });
 
-/**
- * POST /api/paystack-webhook
- * Paystack background fallback event listener.
- */
+// Paystack webhook listener
 app.post('/api/paystack-webhook', async (req, res) => {
   try {
     const hash = crypto
@@ -190,28 +357,19 @@ app.post('/api/paystack-webhook', async (req, res) => {
       .digest('hex');
 
     if (hash !== req.headers['x-paystack-signature']) {
-      console.error('[Webhook] Unauthorized webhook signature');
       return res.status(401).send('Unauthorized webhook signature.');
     }
 
     const event = req.body;
-
     if (event.event === 'charge.success') {
       const data = event.data;
       const paystackReference = data.reference;
       const metadata = data.metadata || {};
-
-      console.log(`[Webhook] Processing charge.success for ref: ${paystackReference}`);
-
       const orderDocRef = doc(db, 'orders', paystackReference);
 
       await runTransaction(db, async (transaction) => {
         const docSnapshot = await transaction.get(orderDocRef);
-        
-        if (docSnapshot.exists()) {
-          console.log(`[Webhook] Reference ${paystackReference} already exists. Skipping duplicate webhook execution.`);
-          return; // Already created
-        }
+        if (docSnapshot.exists()) return;
 
         const generatedOrderId = metadata.orderId || `FS-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
         const generatedTrackingId = metadata.trackingId || `TRK-FS-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -221,7 +379,7 @@ app.post('/api/paystack-webhook', async (req, res) => {
           trackingId: generatedTrackingId,
           customer: {
             name: metadata.customerName || data.customer.first_name + ' ' + data.customer.last_name,
-            email: data.customer.email,
+            email: data.customer.email.toLowerCase(),
             phone: data.customer.phone || metadata.phone || '',
             address: metadata.address || 'No Address Provided',
             landmark: metadata.landmark || '',
@@ -230,26 +388,563 @@ app.post('/api/paystack-webhook', async (req, res) => {
           amount: data.amount / 100,
           paymentReference: paystackReference,
           paymentStatus: 'Paid',
-          trackingStatus: 'Order Confirmed',
-          deliveryStatus: 'Order Confirmed',
+          trackingStatus: 'Order Placed',
+          deliveryStatus: 'Order Placed',
+          confirmed: false,
           items: metadata.items || [],
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         };
 
         transaction.set(orderDocRef, newOrder);
-        console.log(`[Webhook] Reference ${paystackReference} saved successfully.`);
       });
     }
-
     res.status(200).send('Webhook processed');
   } catch (error) {
-    console.error('[Webhook] Paystack webhook error: ', error);
     res.status(500).send('Internal Webhook Error');
   }
 });
 
+// SIGNUP OTP Endpoints (Feature 2A)
+app.post('/api/otp/send-signup', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email is required.' });
+  
+  const otp = generateOTP();
+  try {
+    await saveOTP(email, otp, 'signup');
+    await sendEmail({
+      to: email,
+      subject: `Verify Your FezySlimes Account - Code: ${otp}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
+          <h2 style="color: #06b6d4; text-align: center;">Welcome to FezySlimes! 🤍</h2>
+          <p>Please use the following 6-digit OTP code to verify and activate your account:</p>
+          <div style="background-color: #f8fafc; padding: 15px; text-align: center; border-radius: 8px; font-size: 24px; font-weight: bold; letter-spacing: 4px; color: #ec4899; margin: 20px 0;">
+            ${otp}
+          </div>
+          <p>This code will expire in 10 minutes. If you did not request this, please ignore this email.</p>
+        </div>
+      `
+    });
+    return res.status(200).json({ success: true, message: 'OTP sent successfully.' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to send OTP email.' });
+  }
+});
+
+app.post('/api/otp/verify-signup', async (req, res) => {
+  const { email, code } = req.body;
+  if (!email || !code) return res.status(400).json({ error: 'Email and OTP code are required.' });
+  
+  try {
+    const result = await verifyOTP(email, code, 'signup');
+    if (!result.success) {
+      return res.status(400).json({ error: result.message });
+    }
+
+    // Update isVerified flag in Firestore users collection
+    const userQuery = query(collection(db, 'users'), where('email', '==', email.toLowerCase()));
+    const querySnapshot = await getDocs(userQuery);
+    if (!querySnapshot.empty) {
+      const userDocRef = querySnapshot.docs[0].ref;
+      await updateDoc(userDocRef, { isVerified: true });
+    }
+
+    return res.status(200).json({ success: true, message: 'Account successfully verified!' });
+  } catch (err) {
+    console.error('[Verify Signup] Error:', err);
+    return res.status(500).json({ error: 'OTP verification failed.' });
+  }
+});
+
+// ORDER CONFIRMATION OTP Endpoints (Feature 2B)
+app.post('/api/otp/send-order-confirmation', async (req, res) => {
+  const { email, reference } = req.body;
+  if (!email || !reference) return res.status(400).json({ error: 'Email and reference are required.' });
+  
+  const otp = generateOTP();
+  try {
+    await saveOTP(email, otp, 'order_' + reference);
+    await sendEmail({
+      to: email,
+      subject: `Confirm Your FezySlimes Order - Code: ${otp}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
+          <h2 style="color: #06b6d4; text-align: center;">Confirm Your Order 🤍</h2>
+          <p>Please enter the 6-digit OTP code below to finalize your order confirmation:</p>
+          <div style="background-color: #f8fafc; padding: 15px; text-align: center; border-radius: 8px; font-size: 24px; font-weight: bold; letter-spacing: 4px; color: #ec4899; margin: 20px 0;">
+            ${otp}
+          </div>
+          <p>This code will expire in 10 minutes.</p>
+        </div>
+      `
+    });
+    return res.status(200).json({ success: true, message: 'Order verification OTP sent.' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to send OTP.' });
+  }
+});
+
+app.post('/api/otp/confirm-order', async (req, res) => {
+  const { email, reference, code } = req.body;
+  if (!email || !reference || !code) {
+    return res.status(400).json({ error: 'Email, payment reference, and OTP code are required.' });
+  }
+  
+  try {
+    const otpResult = await verifyOTP(email, code, 'order_' + reference);
+    if (!otpResult.success) {
+      return res.status(400).json({ error: otpResult.message });
+    }
+    
+    // Update order confirmed status in Firestore
+    const orderDocRef = doc(db, 'orders', reference);
+    const orderSnap = await getDoc(orderDocRef);
+    if (!orderSnap.exists()) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+    
+    await updateDoc(orderDocRef, {
+      confirmed: true,
+      updatedAt: serverTimestamp()
+    });
+    
+    const orderData = orderSnap.data();
+    
+    // Send final receipt email (Feature 2B)
+    const itemsListHtml = orderData.items.map(item => `
+      <tr>
+        <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${item.name} (x${item.quantity})</td>
+        <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;">₦${(item.price * item.quantity).toLocaleString()}</td>
+      </tr>
+    `).join('');
+    
+    await sendEmail({
+      to: email,
+      subject: `Order Confirmed: ${orderData.orderId} 💖`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
+          <h2 style="color: #10b981; text-align: center;">Order Confirmed! 💖</h2>
+          <p>Thank you for choosing FezySlimes. Your order is confirmed and is now being processed.</p>
+          <h3>Order Details:</h3>
+          <p><b>Order ID:</b> ${orderData.orderId}<br/><b>Tracking ID:</b> ${orderData.trackingId}<br/><b>Payment Reference:</b> ${reference}</p>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <thead>
+              <tr style="background-color: #f8fafc;">
+                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #e2e8f0;">Item</th>
+                <th style="padding: 8px; text-align: right; border-bottom: 2px solid #e2e8f0;">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsListHtml}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td style="padding: 8px; font-weight: bold;">Total Amount</td>
+                <td style="padding: 8px; font-weight: bold; text-align: right;">₦${orderData.amount.toLocaleString()}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <p style="margin-top: 20px; font-size: 14px;">You can track your package progress on our store using your Order ID or Tracking ID at any time!</p>
+        </div>
+      `
+    });
+    
+    return res.status(200).json({ success: true, message: 'Order finalized and confirmed receipt sent!' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to confirm order.' });
+  }
+});
+
+// LOGIN OTP Endpoints (Passwordless Auth)
+app.post('/api/otp/send-login', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email is required.' });
+
+  try {
+    // Rate Limiting: Max 3 requests per 10 mins
+    const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const otpsRef = collection(db, 'otps');
+    const q = query(
+      otpsRef, 
+      where('email', '==', email.toLowerCase()), 
+      where('type', '==', 'login'),
+      where('createdAt', '>', tenMinsAgo)
+    );
+    const snap = await getDocs(q);
+    
+    if (snap.size >= 3) {
+      return res.status(429).json({ error: 'Too many login attempts. Please wait 10 minutes.' });
+    }
+
+    const otp = generateOTP();
+    await saveOTP(email, otp, 'login');
+    
+    await sendEmail({
+      to: email,
+      subject: `Your FezySlimes Login Code: ${otp}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
+          <h2 style="color: #06b6d4; text-align: center;">Login to FezySlimes 🤍</h2>
+          <p>Please use the following 6-digit OTP code to log in to your account securely:</p>
+          <div style="background-color: #f8fafc; padding: 15px; text-align: center; border-radius: 8px; font-size: 24px; font-weight: bold; letter-spacing: 4px; color: #ec4899; margin: 20px 0;">
+            ${otp}
+          </div>
+          <p>This code will expire in 10 minutes.</p>
+        </div>
+      `
+    });
+    return res.status(200).json({ success: true, message: 'Login OTP sent.' });
+  } catch (err) {
+    console.error('[Send Login OTP] Error:', err);
+    return res.status(500).json({ error: 'Failed to send login OTP.' });
+  }
+});
+
+app.post('/api/otp/verify-login', async (req, res) => {
+  const { email, code } = req.body;
+  if (!email || !code) return res.status(400).json({ error: 'Email and OTP code are required.' });
+  
+  try {
+    const result = await verifyOTP(email, code, 'login');
+    if (!result.success) {
+      return res.status(400).json({ error: result.message });
+    }
+
+    const normalizedEmail = email.toLowerCase();
+    let firebaseUser;
+    try {
+      firebaseUser = await adminAuth.getUserByEmail(normalizedEmail);
+    } catch (error) {
+      if (error.code !== 'auth/user-not-found') throw error;
+      // OTP ownership is the verification step for this passwordless flow.
+      firebaseUser = await adminAuth.createUser({ email: normalizedEmail, emailVerified: true });
+    }
+    const customToken = await adminAuth.createCustomToken(firebaseUser.uid);
+
+    return res.status(200).json({ 
+      success: true, 
+      message: 'OTP verified successfully.',
+      customToken
+    });
+  } catch (err) {
+    console.error('[Verify Login OTP] Error:', err);
+    return res.status(500).json({ error: 'Login OTP verification failed.' });
+  }
+});
+
+// NEWSLETTER SUBSCRIBE Endpoint
+app.post('/api/subscribe', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email is required.' });
+  
+  try {
+    const subRef = doc(db, 'subscribers', email.toLowerCase());
+    const snap = await getDoc(subRef);
+    if (!snap.exists()) {
+      await setDoc(subRef, {
+        email: email.toLowerCase(),
+        subscribedAt: serverTimestamp()
+      });
+    }
+    return res.status(200).json({ success: true, message: 'Successfully subscribed to the newsletter!' });
+  } catch (err) {
+    console.error('[Subscribe] Error:', err);
+    return res.status(500).json({ error: 'Failed to subscribe.' });
+  }
+});
+
+
+// ADMIN ENDPOINTS (Feature 3)
+app.post('/api/admin/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    const token = jwt.sign({ role: 'admin', user: username }, JWT_SECRET, { expiresIn: '8h' });
+    return res.status(200).json({ success: true, token });
+  }
+  return res.status(401).json({ error: 'Invalid admin credentials' });
+});
+
+// Admin Product CRUD and Public Get
+app.get('/api/products', async (req, res) => {
+  try {
+    const productsRef = collection(db, 'products');
+    const snap = await getDocs(productsRef);
+    const list = [];
+    snap.forEach(doc => {
+      list.push({ id: doc.id, ...doc.data() });
+    });
+    return res.status(200).json(list);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch products' });
+  }
+});
+
+// Single product by ID (used by storefront quick-view / detail pages)
+app.get('/api/products/:id', async (req, res) => {
+  try {
+    const prodRef = doc(db, 'products', req.params.id);
+    const snap = await getDoc(prodRef);
+    if (!snap.exists()) return res.status(404).json({ error: 'Product not found' });
+    return res.status(200).json({ id: snap.id, ...snap.data() });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch product' });
+  }
+});
+
+// Helper to add timeout to Promises that might hang (like Firebase gRPC connections)
+const withTimeout = (promise, ms, errorMsg) => {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(errorMsg || 'Operation timed out')), ms);
+  });
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    timeoutPromise
+  ]);
+};
+
+// Admin: Create product
+// Images are now uploaded to Firebase Storage by the Admin frontend.
+// The frontend sends a plain JSON body containing the Firebase Storage download URL.
+app.post('/api/admin/products', verifyAdminToken, async (req, res) => {
+  console.log('[Backend POST /api/admin/products] Request received');
+  try {
+    const { name, description, price, category, texture, scent, stock, image } = req.body;
+    console.log(`[Backend] Parsed payload for product: ${name}`);
+
+    const productsRef = collection(db, 'products');
+    const newId = doc(productsRef).id;
+
+    const newProduct = {
+      id: newId,
+      name,
+      description,
+      price: parseFloat(price),
+      category,
+      texture: texture || '',
+      scent: scent || '',
+      stock: parseInt(stock || '0'),
+      // image is a Firebase Storage download URL sent from the frontend
+      image: image || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80',
+      rating: 5.0,
+      reviewsCount: 0,
+      createdAt: new Date()
+    };
+
+    console.log(`[Backend] Attempting to write document to Firestore with ID: ${newId}...`);
+    // Wrapped in a timeout so it never hangs silently if Firestore network is down
+    await withTimeout(
+      setDoc(doc(productsRef, newId), newProduct),
+      10000, 
+      "Firestore setDoc timed out after 10 seconds. Check Firebase projectId and network connectivity."
+    );
+    
+    console.log(`[Backend] Document ${newId} saved successfully!`);
+    return res.status(201).json({ success: true, product: newProduct });
+  } catch (err) {
+    console.error('[Backend POST /api/admin/products] Fatal Error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to create product' });
+  }
+});
+
+// Admin: Update product
+app.put('/api/admin/products/:id', verifyAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, price, category, texture, scent, stock, image } = req.body;
+
+    const prodRef = doc(db, 'products', id);
+    const snap = await getDoc(prodRef);
+    if (!snap.exists()) return res.status(404).json({ error: 'Product not found' });
+
+    const updates = {
+      name,
+      description,
+      price: parseFloat(price),
+      category,
+      texture: texture || '',
+      scent: scent || '',
+      stock: parseInt(stock || '0'),
+      updatedAt: new Date()
+    };
+    // Only overwrite image if a new URL was provided
+    if (image) updates.image = image;
+
+    await updateDoc(prodRef, updates);
+    return res.status(200).json({ success: true, message: 'Product updated successfully' });
+  } catch (err) {
+    console.error('[Update Product]', err);
+    return res.status(500).json({ error: 'Failed to update product' });
+  }
+});
+
+app.delete('/api/admin/products/:id', verifyAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await deleteDoc(doc(db, 'products', id));
+    return res.status(200).json({ success: true, message: 'Product deleted' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to delete product' });
+  }
+});
+
+// Customer: Get orders by email (Feature 4 - Order History)
+app.get('/api/orders/my-orders', verifyCustomerToken, async (req, res) => {
+  try {
+    const ordersRef = collection(db, 'orders');
+    const q = query(ordersRef, where('customer.email', '==', req.customer.email));
+    const snap = await getDocs(q);
+    const list = [];
+    snap.forEach(doc => {
+      list.push({ id: doc.id, ...doc.data() });
+    });
+    // Sort newest first
+    list.sort((a, b) => {
+      const aMs = a.createdAt?.toMillis?.() || (a.createdAt?.seconds || 0) * 1000;
+      const bMs = b.createdAt?.toMillis?.() || (b.createdAt?.seconds || 0) * 1000;
+      return bMs - aMs;
+    });
+    return res.status(200).json(list);
+  } catch (err) {
+    console.error('[My Orders] Error:', err);
+    return res.status(500).json({ error: 'Failed to fetch orders.' });
+  }
+});
+
+// Admin Orders view and status update
+app.get('/api/admin/orders', verifyAdminToken, async (req, res) => {
+  try {
+    const snap = await getDocs(collection(db, 'orders'));
+    const list = [];
+    snap.forEach(doc => {
+      list.push({ id: doc.id, ...doc.data() });
+    });
+    return res.status(200).json(list);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
+app.put('/api/admin/orders/:id/status', verifyAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { trackingStatus, deliveryStatus } = req.body;
+    const orderRef = doc(db, 'orders', id);
+    
+    await updateDoc(orderRef, {
+      trackingStatus,
+      deliveryStatus,
+      updatedAt: serverTimestamp()
+    });
+    
+    return res.status(200).json({ success: true, message: 'Order status updated' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
+// Seed Initial Products
+const initialProducts = [
+  {
+    id: '1',
+    name: 'Coquette Marshmallow Cocoa',
+    price: 25600,
+    category: 'diy-clay',
+    texture: 'DIY Clay Kit',
+    scent: 'Toasted Marshmallow & Cocoa',
+    description: 'A beautiful pastel pink base topped with handmade clay coquette bows, fake cocoa sprinkles, and chocolate drizzle. Satisfying, spreadable, and ultra-cute.',
+    image: 'https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&w=600&q=80',
+    rating: 5.0,
+    reviewsCount: 42,
+    stock: 50
+  },
+  {
+    id: '2',
+    name: "Snoop's Spa Day Slime",
+    price: 24800,
+    category: 'clear',
+    texture: 'Clear Slime',
+    scent: 'Fresh Cucumber & Aloe',
+    description: 'Translucent blue base with cucumber slices, bath bomb charms, and premium cosmetic glitters. Offers incredibly crisp ASMR bubble clicks.',
+    image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=600&q=80',
+    rating: 4.9,
+    reviewsCount: 38,
+    stock: 40
+  },
+  {
+    id: '3',
+    name: 'Pumpkin Patch Pals',
+    price: 24500,
+    category: 'butter',
+    texture: 'Soft Butter Slime',
+    scent: 'Pumpkin Spice & Vanilla',
+    description: 'Warm orange butter base featuring cute little pumpkin faces, maple leaf charms, and cookie crumbs. Perfectly soft and stretchable.',
+    image: 'https://images.unsplash.com/photo-1508885368104-a2176b6b7a9a?auto=format&fit=crop&w=600&q=80',
+    rating: 4.8,
+    reviewsCount: 29,
+    stock: 35
+  },
+  {
+    id: '4',
+    name: 'Trevi Fountain Wishes',
+    price: 25100,
+    category: 'crunchy',
+    texture: 'Bingsu Crunchy',
+    scent: 'Oasis Breeze & Ocean Salt',
+    description: 'Packed with reflective teal bingsu beads, gold coin charms, and iridescent glitters. Mimics the clear waters of Rome\'s famous fountain.',
+    image: 'https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&w=600&q=80',
+    rating: 5.0,
+    reviewsCount: 51,
+    stock: 30
+  },
+  {
+    id: '5',
+    name: 'Mango Ice Cream Slime',
+    price: 25800,
+    category: 'glossy',
+    texture: 'Glossy Slime',
+    scent: 'Ripe Mango & Sweet Cream',
+    description: 'Thick, glossy yellow slime base topped with an realistic mango ice cream scoop clay and mango syrup drizzle. Extremely clicky.',
+    image: 'https://images.unsplash.com/photo-1549396564-3484afb12e9b?auto=format&fit=crop&w=600&q=80',
+    rating: 4.9,
+    reviewsCount: 31,
+    stock: 25
+  },
+  {
+    id: '6',
+    name: 'Krispy Marshmallow Treat',
+    price: 25300,
+    category: 'foam-bead',
+    texture: 'Floam / Foam Bead',
+    scent: 'Vanilla Crisps & Marshmallow Fluff',
+    description: 'A crunchy white floam base with colorful marshmallow sprinkles and miniature marshmallow charms. Super bubbly.',
+    image: 'https://images.unsplash.com/photo-1559738017-ff2e120900c4?auto=format&fit=crop&w=600&q=80',
+    rating: 4.7,
+    reviewsCount: 24,
+    stock: 20
+  }
+];
+
+async function seedProductsIfNeeded() {
+  try {
+    const productsRef = collection(db, 'products');
+    const snapshot = await getDocs(productsRef);
+    if (snapshot.empty) {
+      console.log('[Seed] Products collection is empty. Seeding initial products...');
+      for (const prod of initialProducts) {
+        await setDoc(doc(productsRef, prod.id), prod);
+      }
+      console.log('[Seed] Seeding completed.');
+    }
+  } catch (error) {
+    console.error('[Seed] Error seeding products:', error);
+  }
+}
+
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`FezySlimes Secure Payment Backend running on port ${PORT}`);
+  await seedProductsIfNeeded();
 });

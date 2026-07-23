@@ -22,7 +22,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { products } from '../data';
+import { fetchProducts } from '../services/productService';
 import { 
   getUserProfile, 
   updateUserProfile, 
@@ -33,6 +33,7 @@ import {
   deleteAddress, 
   setDefaultAddress 
 } from '../services/dbService';
+import { getMyOrders, ORDER_STATUSES } from '../services/orderService';
 import { 
   EmailAuthProvider, 
   reauthenticateWithCredential, 
@@ -58,9 +59,12 @@ export default function CustomerDashboard() {
     notifications: { orderUpdates: true, promotions: false }
   });
 
-  // Wishlist & Address states
+  // Wishlist, Address & Order states
   const [wishlistIds, setWishlistIds] = useState([]);
   const [addresses, setAddresses] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [isOrdersLoading, setIsOrdersLoading] = useState(false);
+  const [allProducts, setAllProducts] = useState([]);
 
   // Address form states
   const [showAddressForm, setShowAddressForm] = useState(false);
@@ -98,14 +102,31 @@ export default function CustomerDashboard() {
     // Load initial user data
     const loadUserData = async () => {
       try {
-        const userProfile = await getUserProfile(currentUser.uid);
-        const userWishlist = await getWishlist(currentUser.uid);
-        const userAddresses = await getAddresses(currentUser.uid);
+        const [userProfile, userWishlist, userAddresses, fetchedProducts] = await Promise.all([
+          getUserProfile(currentUser.uid),
+          getWishlist(currentUser.uid),
+          getAddresses(currentUser.uid),
+          fetchProducts().catch(() => [])
+        ]);
 
         setProfile(userProfile);
         setWishlistIds(userWishlist);
         setAddresses(userAddresses);
+        setAllProducts(Array.isArray(fetchedProducts) ? fetchedProducts : []);
         setNewEmail(currentUser.email || '');
+
+        // Load orders in background (server may not be running)
+        if (currentUser.email) {
+          setIsOrdersLoading(true);
+          try {
+            const userOrders = await getMyOrders(currentUser);
+            setOrders(userOrders);
+          } catch {
+            // Server may be offline - silently fail
+          } finally {
+            setIsOrdersLoading(false);
+          }
+        }
       } catch (err) {
         console.error("Error loading dashboard data: ", err);
       } finally {
@@ -431,11 +452,98 @@ export default function CustomerDashboard() {
               {activeTab === 'orders' && (
                 <div className="space-y-6">
                   <h2 className="text-2xl font-black text-slate-800">Order History</h2>
-                  <div className="flex flex-col items-center justify-center text-center p-12 bg-slate-50 border border-slate-100 rounded-[2rem] min-h-[300px]">
-                    <Package className="w-12 h-12 text-slate-300 mb-4" />
-                    <p className="text-slate-600 font-bold mb-2">No orders found.</p>
-                    <p className="text-sm text-slate-400 font-medium">When you purchase slimes, they will appear here.</p>
-                  </div>
+                  
+                  {isOrdersLoading ? (
+                    <div className="flex items-center justify-center py-16">
+                      <div className="w-8 h-8 border-4 border-slate-100 border-t-cyan-400 rounded-full animate-spin" />
+                    </div>
+                  ) : orders.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center text-center p-12 bg-slate-50 border border-slate-100 rounded-[2rem] min-h-[300px]">
+                      <Package className="w-12 h-12 text-slate-300 mb-4" />
+                      <p className="text-slate-600 font-bold mb-2">No orders found.</p>
+                      <p className="text-sm text-slate-400 font-medium">When you purchase slimes, they will appear here.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {orders.map((order) => {
+                        const statusIdx = ORDER_STATUSES.indexOf(order.trackingStatus);
+                        const progress = statusIdx >= 0 ? Math.round((statusIdx / (ORDER_STATUSES.length - 1)) * 100) : 0;
+                        const formatDate = (ts) => {
+                          if (!ts) return 'N/A';
+                          const d = ts.toDate ? ts.toDate() : new Date((ts.seconds || 0) * 1000);
+                          return d.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
+                        };
+                        return (
+                          <div key={order.id} className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                            <div className="flex flex-wrap gap-4 justify-between items-start mb-4">
+                              <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order ID</p>
+                                <p className="font-black text-slate-800 font-mono text-sm">{order.orderId}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Amount Paid</p>
+                                <p className="font-black text-pink-500">₦{(order.amount || 0).toLocaleString()}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Date</p>
+                                <p className="font-bold text-slate-600 text-sm">{formatDate(order.createdAt)}</p>
+                              </div>
+                              <div>
+                                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${
+                                  order.trackingStatus === 'Delivered' ? 'bg-green-50 text-green-600' :
+                                  order.trackingStatus === 'Out for Delivery' ? 'bg-pink-50 text-pink-600' :
+                                  order.trackingStatus === 'In Transit' ? 'bg-cyan-50 text-cyan-600' :
+                                  'bg-amber-50 text-amber-600'
+                                }`}>
+                                  {order.trackingStatus || 'Processing'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Progress bar */}
+                            {statusIdx >= 0 && (
+                              <div className="mb-4">
+                                <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1.5">
+                                  <span>Order Placed</span>
+                                  <span>{progress}% Complete</span>
+                                  <span>Delivered</span>
+                                </div>
+                                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-gradient-to-r from-cyan-400 to-pink-400 rounded-full transition-all duration-700"
+                                    style={{ width: `${progress}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Items */}
+                            {order.items && order.items.length > 0 && (
+                              <div className="flex gap-2 flex-wrap mb-4">
+                                {order.items.slice(0, 3).map((item, i) => (
+                                  <div key={i} className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-1.5 text-xs">
+                                    {item.image && <img src={item.image} alt={item.name} className="w-6 h-6 object-cover rounded-lg" />}
+                                    <span className="font-bold text-slate-700 truncate max-w-[100px]">{item.name}</span>
+                                    <span className="text-slate-400 font-semibold">×{item.quantity}</span>
+                                  </div>
+                                ))}
+                                {order.items.length > 3 && (
+                                  <span className="text-xs font-bold text-slate-400 self-center">+{order.items.length - 3} more</span>
+                                )}
+                              </div>
+                            )}
+
+                            <button
+                              onClick={() => navigate(`/track-order?order=${order.orderId}`)}
+                              className="w-full py-2.5 bg-cyan-50 hover:bg-cyan-100 text-cyan-600 font-black rounded-xl text-xs transition-all flex items-center justify-center gap-2"
+                            >
+                              <Map className="w-4 h-4" /> Track This Order
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -622,7 +730,7 @@ export default function CustomerDashboard() {
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {wishlistIds.map((id) => {
-                        const product = products.find(p => p.id === id);
+                        const product = allProducts.find(p => p.id === id);
                         if (!product) return null;
                         return (
                           <div key={product.id} className="flex gap-4 p-4 bg-white border border-slate-200 rounded-3xl shadow-sm hover:shadow-md transition-shadow">

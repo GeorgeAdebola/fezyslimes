@@ -43,80 +43,18 @@ export const categories = [
   }
 ];
 
-export const products = [
-  {
-    id: '1',
-    name: 'Coquette Marshmallow Cocoa',
-    price: 25600,
-    category: 'diy-clay',
-    texture: 'DIY Clay Kit',
-    scent: 'Toasted Marshmallow & Cocoa',
-    description: 'A beautiful pastel pink base topped with handmade clay coquette bows, fake cocoa sprinkles, and chocolate drizzle. Satisfying, spreadable, and ultra-cute.',
-    image: 'https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&w=600&q=80',
-    rating: 5.0,
-    reviewsCount: 42
-  },
-  {
-    id: '2',
-    name: "Snoop's Spa Day Slime",
-    price: 24800,
-    category: 'clear',
-    texture: 'Clear Slime',
-    scent: 'Fresh Cucumber & Aloe',
-    description: 'Translucent blue base with cucumber slices, bath bomb charms, and premium cosmetic glitters. Offers incredibly crisp ASMR bubble clicks.',
-    image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=600&q=80',
-    rating: 4.9,
-    reviewsCount: 38
-  },
-  {
-    id: '3',
-    name: 'Pumpkin Patch Pals',
-    price: 24500,
-    category: 'butter',
-    texture: 'Soft Butter Slime',
-    scent: 'Pumpkin Spice & Vanilla',
-    description: 'Warm orange butter base featuring cute little pumpkin faces, maple leaf charms, and cookie crumbs. Perfectly soft and stretchable.',
-    image: 'https://images.unsplash.com/photo-1508885368104-a2176b6b7a9a?auto=format&fit=crop&w=600&q=80',
-    rating: 4.8,
-    reviewsCount: 29
-  },
-  {
-    id: '4',
-    name: 'Trevi Fountain Wishes',
-    price: 25100,
-    category: 'crunchy',
-    texture: 'Bingsu Crunchy',
-    scent: 'Oasis Breeze & Ocean Salt',
-    description: 'Packed with reflective teal bingsu beads, gold coin charms, and iridescent glitters. Mimics the clear waters of Rome\'s famous fountain.',
-    image: 'https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&w=600&q=80',
-    rating: 5.0,
-    reviewsCount: 51
-  },
-  {
-    id: '5',
-    name: 'Mango Ice Cream Slime',
-    price: 25800,
-    category: 'glossy',
-    texture: 'Glossy Slime',
-    scent: 'Ripe Mango & Sweet Cream',
-    description: 'Thick, glossy yellow slime base topped with an realistic mango ice cream scoop clay and mango syrup drizzle. Extremely clicky.',
-    image: 'https://images.unsplash.com/photo-1549396564-3484afb12e9b?auto=format&fit=crop&w=600&q=80',
-    rating: 4.9,
-    reviewsCount: 31
-  },
-  {
-    id: '6',
-    name: 'Krispy Marshmallow Treat',
-    price: 25300,
-    category: 'foam-bead',
-    texture: 'Floam / Foam Bead',
-    scent: 'Vanilla Crisps & Marshmallow Fluff',
-    description: 'A crunchy white floam base with colorful marshmallow sprinkles and miniature marshmallow charms. Super bubbly.',
-    image: 'https://images.unsplash.com/photo-1559738017-ff2e120900c4?auto=format&fit=crop&w=600&q=80',
-    rating: 4.7,
-    reviewsCount: 24
-  }
-];
+/**
+ * PRODUCTS REMOVED FROM THIS FILE.
+ *
+ * Products are now stored in Firebase Firestore (collection: "products")
+ * and managed exclusively through the Admin Dashboard.
+ *
+ * Storefront pages fetch them from: GET /api/products  (via productService.js)
+ * Admin CRUD writes to:            POST/PUT/DELETE /api/admin/products
+ *
+ * Do NOT re-add a hardcoded products array here.
+ */
+
 
 export const reviews = [
   {

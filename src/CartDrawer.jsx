@@ -7,6 +7,7 @@ import { shippingLocations } from './data';
 import { createOrder } from './services/orderService';
 import { useAuth } from './AuthContext';
 import { getAddresses } from './services/dbService';
+import { API_BASE } from './services/productService';
 
 const STEPS = ['Cart', 'Details', 'Shipping', 'Payment'];
 
@@ -126,7 +127,7 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
         },
         onSuccess: async (transaction) => {
           try {
-            const response = await fetch('http://localhost:5000/api/verify-payment', {
+            const response = await fetch(`${API_BASE}/api/verify-payment`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json'

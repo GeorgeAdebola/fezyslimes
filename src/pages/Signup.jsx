@@ -1,28 +1,43 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../AuthContext';
-import { Eye, EyeOff, Lock, Mail, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { API_BASE } from '../services/productService';
+
+import { db } from '../firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export default function Signup() {
   const navigate = useNavigate();
-  const { signup, loginWithGoogle } = useAuth();
+  const location = useLocation();
+  const { signup, loginWithCustomToken, loginWithGoogle, logout } = useAuth();
   
+  // Tabs: 'otp' | 'password'
+  const [loginMethod, setLoginMethod] = useState('otp');
+  
+  // Form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [otp, setOtp] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // OTP flow state
+  const [otpSent, setOtpSent] = useState(false);
+
+  // Determine redirect page (from location state or default to /)
+  const from = location.state?.from?.pathname || '/';
 
   // Strong Password Checklist
   const hasMinLength = password.length >= 6;
   const hasUppercase = /[A-Z]/.test(password);
   const hasNumber = /[0-9]/.test(password);
-
   const isPasswordValid = hasMinLength && hasUppercase && hasNumber;
 
-  const handleSignup = async (e) => {
+  const handlePasswordSignup = async (e) => {
     e.preventDefault();
     if (!email || !password) {
       toast.error('Please fill in all required fields.');
@@ -41,9 +56,92 @@ export default function Signup() {
 
     setIsLoading(true);
     try {
-      await signup(email, password);
-      toast.success('Account created successfully! Welcome to FezySlimes 🤍');
-      navigate('/');
+      const userCredential = await signup(email, password);
+      const user = userCredential.user;
+      
+      await setDoc(doc(db, 'users', user.uid), {
+        email: email.toLowerCase(),
+        isVerified: false,
+        createdAt: new Date()
+      });
+
+      await fetch(`${API_BASE}/api/otp/send-signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.toLowerCase() })
+      });
+      
+      toast.success('Account created! Please verify your email with the OTP sent to you 🤍');
+      await logout();
+      navigate('/verify-email', { state: { email: email.toLowerCase(), uid: user.uid } });
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message.replace('Firebase: ', ''));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSendOTP = async (e) => {
+    if (e) e.preventDefault();
+    if (!email) {
+      toast.error('Please enter your email.');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/otp/send-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.toLowerCase() })
+      });
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to send OTP');
+      
+      setOtpSent(true);
+      toast.success('Verification code sent to your email! 🤍');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async (e) => {
+    e.preventDefault();
+    if (!otp || otp.length < 6) {
+      toast.error('Please enter the 6-digit code.');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/otp/verify-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.toLowerCase(), code: otp })
+      });
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Invalid OTP');
+      
+      const userCredential = await loginWithCustomToken(data.customToken);
+      const user = userCredential.user;
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      if (!userDoc.exists()) {
+        await setDoc(userDocRef, {
+          email: email.toLowerCase(),
+          isVerified: true,
+          createdAt: new Date()
+        });
+      }
+
+      toast.success('Account created seamlessly! ✨');
+      navigate(from, { replace: true });
+      
     } catch (err) {
       console.error(err);
       toast.error(err.message.replace('Firebase: ', ''));
@@ -54,9 +152,21 @@ export default function Signup() {
 
   const handleGoogleLogin = async () => {
     try {
-      await loginWithGoogle();
+      const userCredential = await loginWithGoogle();
+      const user = userCredential.user;
+      
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      if (!userDoc.exists()) {
+        await setDoc(userDocRef, {
+          email: user.email.toLowerCase(),
+          isVerified: true,
+          createdAt: new Date()
+        });
+      }
+      
       toast.success('Logged in successfully with Google! ✨');
-      navigate('/');
+      navigate(from, { replace: true });
     } catch (err) {
       console.error(err);
       toast.error('Google sign-in failed.');
@@ -65,7 +175,6 @@ export default function Signup() {
 
   return (
     <div className="min-h-screen flex items-center justify-center relative px-6 py-24 bg-gradient-to-br from-teal-50 via-white to-pink-50 overflow-hidden">
-      {/* Background decoration */}
       <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-cyan-200/20 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-pink-200/20 blur-[120px] pointer-events-none" />
 
@@ -75,7 +184,6 @@ export default function Signup() {
         transition={{ duration: 0.6 }}
         className="w-full max-w-md bg-white/80 backdrop-blur-xl border border-white/60 p-8 rounded-[2rem] shadow-xl shadow-pink-100/30 z-10 flex flex-col items-center"
       >
-        {/* Large Brand Logo */}
         <Link to="/" className="mb-6">
           <img src="/logo.png" alt="FezySlimes Logo" className="h-24 w-auto drop-shadow-md hover:scale-105 transition-transform" />
         </Link>
@@ -85,79 +193,167 @@ export default function Signup() {
           <p className="text-slate-500 font-medium text-sm">Join Nigeria's Premium Slime Community</p>
         </div>
 
-        <form onSubmit={handleSignup} className="w-full space-y-4">
-          <div className="relative">
-            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input 
-              type="email" 
-              placeholder="Email Address" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition-all font-semibold"
-              required
-            />
-          </div>
-
-          <div className="relative">
-            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input 
-              type={showPassword ? "text" : "password"} 
-              placeholder="Password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-12 py-4 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition-all font-semibold"
-              required
-            />
-            <button 
-              type="button" 
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-cyan-500 transition-colors"
-            >
-              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
-          </div>
-
-          <div className="relative">
-            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-            <input 
-              type="password" 
-              placeholder="Confirm Password" 
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition-all font-semibold"
-              required
-            />
-          </div>
-
-          {/* Password Validation Checklist */}
-          {password.length > 0 && (
-            <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xs space-y-2 font-medium text-slate-500">
-              <p className="font-bold text-slate-600 mb-1">Password Requirements:</p>
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className={`w-4 h-4 ${hasMinLength ? 'text-green-500' : 'text-slate-300'}`} />
-                <span>At least 6 characters</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className={`w-4 h-4 ${hasUppercase ? 'text-green-500' : 'text-slate-300'}`} />
-                <span>At least 1 uppercase letter (A-Z)</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className={`w-4 h-4 ${hasNumber ? 'text-green-500' : 'text-slate-300'}`} />
-                <span>At least 1 number (0-9)</span>
-              </div>
-            </div>
-          )}
-
+        <div className="flex w-full bg-slate-100 rounded-xl p-1 mb-6">
           <button 
-            type="submit" 
-            disabled={isLoading || (password.length > 0 && !isPasswordValid)}
-            className="w-full py-4 bg-cyan-400 hover:bg-cyan-500 disabled:bg-slate-300 text-white font-black rounded-2xl shadow-lg shadow-cyan-200 transition-all active:scale-95 flex items-center justify-center gap-2"
+            type="button"
+            onClick={() => setLoginMethod('otp')}
+            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${loginMethod === 'otp' ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
-            {isLoading ? 'Creating Account...' : <><span className="flex items-center gap-2">Sign Up <ArrowRight className="w-5 h-5" /></span></>}
+            Email Code
           </button>
-        </form>
+          <button 
+            type="button"
+            onClick={() => setLoginMethod('password')}
+            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${loginMethod === 'password' ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Password
+          </button>
+        </div>
 
-        <div className="relative my-6 text-center w-full">
+        <AnimatePresence mode="wait">
+          {loginMethod === 'otp' ? (
+            <motion.form 
+              key="otp-form"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2 }}
+              onSubmit={otpSent ? handleVerifyOTP : handleSendOTP} 
+              className="w-full space-y-4"
+            >
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input 
+                  type="email" 
+                  placeholder="Email Address" 
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (otpSent) setOtpSent(false);
+                  }}
+                  disabled={otpSent || isLoading}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition-all font-semibold disabled:opacity-60"
+                  required
+                />
+              </div>
+
+              {otpSent && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="relative"
+                >
+                  <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <input 
+                    type="text" 
+                    placeholder="Enter 6-digit code" 
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    maxLength={6}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition-all font-semibold text-center tracking-widest text-lg"
+                    required
+                  />
+                  <div className="flex justify-end pt-2">
+                    <button type="button" onClick={handleSendOTP} disabled={isLoading} className="text-xs font-bold text-cyan-600 hover:text-pink-500 transition-colors">
+                      Resend Code
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              <button 
+                type="submit" 
+                disabled={isLoading}
+                className="w-full py-4 bg-cyan-400 hover:bg-cyan-500 disabled:bg-slate-300 text-white font-black rounded-2xl shadow-lg shadow-cyan-200 transition-all active:scale-95 flex items-center justify-center gap-2"
+              >
+                {isLoading ? (otpSent ? 'Verifying...' : 'Sending...') : (
+                  <><span className="flex items-center gap-2">{otpSent ? 'Verify & Create Account' : 'Send Verification Code'} <ArrowRight className="w-5 h-5" /></span></>
+                )}
+              </button>
+            </motion.form>
+          ) : (
+            <motion.form 
+              key="password-form"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.2 }}
+              onSubmit={handlePasswordSignup} 
+              className="w-full space-y-4"
+            >
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input 
+                  type="email" 
+                  placeholder="Email Address" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition-all font-semibold"
+                  required
+                />
+              </div>
+
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  placeholder="Password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-12 py-4 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition-all font-semibold"
+                  required
+                />
+                <button 
+                  type="button" 
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-cyan-500 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                <input 
+                  type="password" 
+                  placeholder="Confirm Password" 
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 transition-all font-semibold"
+                  required
+                />
+              </div>
+
+              {password.length > 0 && (
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xs space-y-2 font-medium text-slate-500">
+                  <p className="font-bold text-slate-600 mb-1">Password Requirements:</p>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className={`w-4 h-4 ${hasMinLength ? 'text-green-500' : 'text-slate-300'}`} />
+                    <span>At least 6 characters</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className={`w-4 h-4 ${hasUppercase ? 'text-green-500' : 'text-slate-300'}`} />
+                    <span>At least 1 uppercase letter (A-Z)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className={`w-4 h-4 ${hasNumber ? 'text-green-500' : 'text-slate-300'}`} />
+                    <span>At least 1 number (0-9)</span>
+                  </div>
+                </div>
+              )}
+
+              <button 
+                type="submit" 
+                disabled={isLoading || (password.length > 0 && !isPasswordValid)}
+                className="w-full py-4 bg-pink-400 hover:bg-pink-500 disabled:bg-slate-300 text-white font-black rounded-2xl shadow-lg shadow-pink-200 transition-all active:scale-95 flex items-center justify-center gap-2"
+              >
+                {isLoading ? 'Creating Account...' : <><span className="flex items-center gap-2">Sign Up <ArrowRight className="w-5 h-5" /></span></>}
+              </button>
+            </motion.form>
+          )}
+        </AnimatePresence>
+
+        <div className="relative my-8 text-center w-full">
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-slate-100"></div>
           </div>
@@ -185,7 +381,6 @@ export default function Signup() {
             Log In
           </Link>
         </p>
-
       </motion.div>
     </div>
   );

@@ -6,13 +6,18 @@ import Navbar from './Navbar';
 import CartDrawer from './CartDrawer';
 import ProductQuickView from './ProductQuickView';
 import WelcomePopup from './WelcomePopup';
+import NewsletterPopup from './components/NewsletterPopup';
 import Home from './pages/Home';
 import OrderTracking from './pages/OrderTracking';
 import CustomerDashboard from './pages/CustomerDashboard';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
-import { reviews } from './data';
+import VerifyEmail from './pages/VerifyEmail';
+import ConfirmOrder from './pages/ConfirmOrder';
+import AdminLogin from './pages/admin/AdminLogin';
+import AdminDashboard from './pages/admin/index';
+import { reviews } from './data'; // reviews are static UI content, not Firestore data
 import { getWishlist, updateWishlist } from './services/dbService';
 import toast from 'react-hot-toast';
 
@@ -145,6 +150,7 @@ function Layout() {
         }
       }} />
       <WelcomePopup />
+      <NewsletterPopup />
 
       {/* Animated Interactive Background layers */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-gradient-to-br from-teal-50 via-white to-pink-50 animate-gradient">
@@ -198,7 +204,12 @@ export default function App() {
             <Route path="login" element={<Login />} />
             <Route path="signup" element={<Signup />} />
             <Route path="forgot-password" element={<ForgotPassword />} />
+            <Route path="verify-email" element={<VerifyEmail />} />
+            <Route path="confirm-order" element={<ConfirmOrder />} />
           </Route>
+          {/* Admin routes (standalone, no main layout/navbar) */}
+          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<AdminLogin />} />
         </Routes>
       </Router>
     </AuthProvider>

@@ -1,13 +1,14 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyB8Uarm1Wfr9gfCGhohvSBNpT3zBpzAyYQ",
   authDomain: "slime-business.firebaseapp.com",
   projectId: "slime-business",
-  storageBucket: "slime-business.firebasestorage.app",
+  storageBucket: "slime-business.appspot.com",
   messagingSenderId: "1056410131791",
   appId: "1:1056410131791:web:dbee93e059d2900d10b93a",
   measurementId: "G-6JSP3BKPLQ"
@@ -20,5 +21,6 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);
+export const storage = getStorage(app);
 
 export default app;

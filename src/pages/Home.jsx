@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Sparkles, 
@@ -14,14 +14,22 @@ import {
   ShieldAlert,
   Camera,
   Heart,
-  Search
+  Search,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
-import { categories, products, reviews, shippingLocations } from '../data';
+import { categories, reviews, shippingLocations } from '../data';
+import CustomerReviews from '../components/CustomerReviews';
+import { fetchProducts } from '../services/productService';
+import toast from 'react-hot-toast';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [products, setProducts] = useState([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [productsError, setProductsError] = useState(null);
 
   const { 
     scrollToSection, 
@@ -34,8 +42,28 @@ export default function Home() {
     nextReview
   } = useOutletContext();
 
+  // Fetch products from the shared Firestore backend (same source as Admin)
+  const loadProducts = async () => {
+    setIsLoadingProducts(true);
+    setProductsError(null);
+    try {
+      const data = await fetchProducts();
+      setProducts(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('[Home] Failed to load products:', err);
+      setProductsError('Could not load products. Please try again.');
+      toast.error('Could not load products.');
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
   const filteredProducts = products.filter(prod => {
-    const matchesSearch = prod.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = prod.name?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory === 'all' || prod.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
@@ -162,8 +190,25 @@ export default function Home() {
             ))}
           </motion.div>
 
-          {/* Product Grid */}
-          {filteredProducts.length === 0 ? (
+          {/* Product Grid — Loading / Error / Data states */}
+          {isLoadingProducts ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-4">
+              <RefreshCw className="w-10 h-10 text-cyan-400 animate-spin" />
+              <p className="text-slate-400 font-semibold text-sm">Loading slimes...</p>
+            </div>
+          ) : productsError ? (
+            <div className="flex flex-col items-center justify-center py-20 bg-red-50/60 border border-red-100 backdrop-blur-md rounded-3xl p-8 text-center">
+              <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
+              <h3 className="text-lg font-black text-slate-800">Failed to load products</h3>
+              <p className="text-sm text-slate-500 mt-1 mb-6">{productsError}</p>
+              <button 
+                onClick={loadProducts} 
+                className="px-5 py-2.5 bg-cyan-400 hover:bg-cyan-500 text-white font-black rounded-xl text-xs shadow-md flex items-center gap-2"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Retry
+              </button>
+            </div>
+          ) : filteredProducts.length === 0 ? (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center text-center py-20 bg-white/40 border border-white/60 backdrop-blur-md rounded-3xl p-8">
               <span className="text-5xl mb-4">🐼</span>
               <h3 className="text-xl font-black text-slate-800">No matching slimes found</h3>
@@ -177,34 +222,58 @@ export default function Home() {
             </motion.div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-              {filteredProducts.map((prod, i) => (
-                <motion.div key={prod.id} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} transition={{ delay: i * 0.05 }} className="bg-white/70 backdrop-blur-md border border-white rounded-[2rem] overflow-hidden shadow-xl shadow-teal-50/50 hover:shadow-pink-100/60 flex flex-col justify-between group transition-all duration-300 hover:-translate-y-2">
-                  <div className="relative h-80 overflow-hidden bg-slate-100">
-                    <img src={prod.image} alt={prod.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
-                    <div className="absolute top-4 right-4 flex flex-col gap-2">
-                      <button onClick={() => toggleFavorite(prod.id)} className={`p-3 rounded-2xl border backdrop-blur-md transition-all shadow-sm ${favorites.includes(prod.id) ? 'bg-pink-500 border-pink-400 text-white' : 'bg-white/80 border-white text-slate-400 hover:text-pink-500 hover:bg-white'}`}>
-                        <Heart className={`w-5 h-5 ${favorites.includes(prod.id) ? 'fill-current' : ''}`} />
-                      </button>
-                    </div>
-                  </div>
+              {filteredProducts.map((prod, i) => {
+                const isOutOfStock = (prod.stock ?? 1) <= 0;
+                return (
+                  <motion.div key={prod.id} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} transition={{ delay: i * 0.05 }} className="bg-white/70 backdrop-blur-md border border-white rounded-[2rem] overflow-hidden shadow-xl shadow-teal-50/50 hover:shadow-pink-100/60 flex flex-col justify-between group transition-all duration-300 hover:-translate-y-2">
+                    <div className="relative h-80 overflow-hidden bg-slate-100">
+                      <img src={prod.image} alt={prod.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                      
+                      {/* Out of Stock badge */}
+                      {isOutOfStock && (
+                        <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center">
+                          <span className="bg-white/95 backdrop-blur-sm text-slate-700 font-black text-sm px-4 py-2 rounded-full border border-white shadow-md">
+                            Out of Stock
+                          </span>
+                        </div>
+                      )}
 
-                  <div className="p-6 text-left space-y-4">
-                    <div className="flex justify-between items-start gap-4">
-                      <h3 className="font-black text-slate-800 text-lg leading-tight group-hover:text-cyan-500 transition-colors">{prod.name}</h3>
-                      <span className="font-black text-pink-500 text-lg shrink-0">₦{prod.price.toLocaleString()}</span>
+                      <div className="absolute top-4 right-4 flex flex-col gap-2">
+                        <button onClick={() => toggleFavorite(prod.id)} className={`p-3 rounded-2xl border backdrop-blur-md transition-all shadow-sm ${favorites.includes(prod.id) ? 'bg-pink-500 border-pink-400 text-white' : 'bg-white/80 border-white text-slate-400 hover:text-pink-500 hover:bg-white'}`}>
+                          <Heart className={`w-5 h-5 ${favorites.includes(prod.id) ? 'fill-current' : ''}`} />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 pt-2">
-                      <button onClick={() => setSelectedProduct(prod)} className="py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-600 rounded-2xl transition-all active:scale-95">
-                        Quick View
-                      </button>
-                      <button onClick={() => handleAddToCart(prod)} className="py-3 bg-cyan-400 hover:bg-cyan-500 text-white text-xs font-black rounded-2xl shadow-lg shadow-cyan-150 transition-all active:scale-95 flex items-center justify-center gap-1.5">
-                        Add to Cart
-                      </button>
+                    <div className="p-6 text-left space-y-4">
+                      <div className="flex justify-between items-start gap-4">
+                        <h3 className="font-black text-slate-800 text-lg leading-tight group-hover:text-cyan-500 transition-colors">{prod.name}</h3>
+                        <span className="font-black text-pink-500 text-lg shrink-0">₦{(prod.price || 0).toLocaleString()}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 pt-2">
+                        <button 
+                          onClick={() => setSelectedProduct(prod)} 
+                          className="py-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-600 rounded-2xl transition-all active:scale-95"
+                        >
+                          Quick View
+                        </button>
+                        <button 
+                          onClick={() => !isOutOfStock && handleAddToCart(prod)} 
+                          disabled={isOutOfStock}
+                          className={`py-3 text-xs font-black rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-1.5 ${
+                            isOutOfStock 
+                              ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
+                              : 'bg-cyan-400 hover:bg-cyan-500 text-white shadow-lg shadow-cyan-150'
+                          }`}
+                        >
+                          {isOutOfStock ? 'Out of Stock' : 'Add to Cart'}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -216,15 +285,20 @@ export default function Home() {
           <div className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-[3rem] p-8 lg:p-16 shadow-2xl shadow-pink-100/50">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
               <div className="lg:col-span-5 flex justify-center">
-                <motion.div initial={{ scale: 0.8, opacity: 0 }} whileInView={{ scale: 1, opacity: 1 }} viewport={{ once: true }} transition={{ type: "spring" }} className="relative w-80 h-96 rounded-[2.5rem] overflow-hidden border-[6px] border-white shadow-2xl bg-gradient-to-br from-pink-200 to-cyan-200 p-2 transform -rotate-3">
-                  <div className="w-full h-full rounded-[2rem] bg-white/40 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center space-y-4">
-                    <span className="text-7xl animate-bounce">🐼</span>
-                    <div>
-                      <h4 className="font-black text-slate-800 text-2xl">Tire &amp; Tase</h4>
-                      <span className="text-sm font-bold text-pink-500">Founders of FezySlimes</span>
-                    </div>
-                    <p className="text-sm text-slate-600 font-medium max-w-[200px]">Handcrafting premium sensory products from Nigeria to the world.</p>
-                  </div>
+                <motion.div
+                  initial={{ scale: 0.85, opacity: 0 }}
+                  whileInView={{ scale: 1, opacity: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ type: "spring", damping: 18, stiffness: 160 }}
+                  className="relative flex items-center justify-center"
+                >
+                  {/* Soft glow backing so logo doesn't get lost */}
+                  <div className="absolute w-72 h-72 sm:w-80 sm:h-80 rounded-full bg-gradient-to-br from-pink-200/60 via-cyan-100/50 to-teal-200/60 blur-2xl" />
+                  <img
+                    src="/logo.png"
+                    alt="FezySlimes Logo"
+                    className="relative w-64 sm:w-80 lg:w-96 h-auto object-contain animate-bob drop-shadow-2xl"
+                  />
                 </motion.div>
               </div>
 
@@ -335,6 +409,17 @@ export default function Home() {
                 <button onClick={nextReview} className="p-3 bg-white border border-slate-100 shadow-sm hover:shadow-md hover:border-cyan-200 text-slate-500 hover:text-cyan-500 rounded-2xl transition-all active:scale-95"><ChevronRight className="w-6 h-6" /></button>
               </div>
             </div>
+          </motion.div>
+
+          {/* Real customer photo & video gallery */}
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-40px" }}
+            variants={fadeUp}
+            className="mt-16"
+          >
+            <CustomerReviews />
           </motion.div>
         </div>
       </section>

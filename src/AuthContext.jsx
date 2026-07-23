@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import { 
   onAuthStateChanged, 
   signInWithEmailAndPassword, 
+  signInWithCustomToken,
   createUserWithEmailAndPassword, 
   signOut,
   signInWithPopup,
@@ -53,6 +54,10 @@ export function AuthProvider({ children }) {
     return signInWithEmailAndPassword(auth, email, password);
   }
 
+  function loginWithCustomToken(customToken) {
+    return signInWithCustomToken(auth, customToken);
+  }
+
   function signup(email, password) {
     return createUserWithEmailAndPassword(auth, email, password);
   }
@@ -79,6 +84,7 @@ export function AuthProvider({ children }) {
   const value = {
     currentUser,
     login,
+    loginWithCustomToken,
     signup,
     loginWithGoogle,
     logout,

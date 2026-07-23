@@ -1,5 +1,6 @@
 import { db } from '../firebase';
 import { collection, addDoc, getDocs, query, where, serverTimestamp } from 'firebase/firestore';
+import { API_BASE } from './productService';
 
 // 6-Step Status Workflow
 export const ORDER_STATUSES = [
@@ -78,3 +79,20 @@ export const getOrderByTrackingOrId = async (searchId) => {
 export const getStatusIndex = (status) => {
   return ORDER_STATUSES.indexOf(status);
 };
+
+// Get the authenticated customer's own orders.
+export const getMyOrders = async (currentUser) => {
+  try {
+    if (!currentUser) throw new Error('You must be logged in to view your orders.');
+    const idToken = await currentUser.getIdToken();
+    const res = await fetch(`${API_BASE}/api/orders/my-orders`, {
+      headers: { Authorization: `Bearer ${idToken}` }
+    });
+    if (!res.ok) throw new Error('Failed to fetch orders.');
+    return await res.json();
+  } catch (error) {
+    console.error('Error fetching customer orders:', error);
+    throw error;
+  }
+};
+

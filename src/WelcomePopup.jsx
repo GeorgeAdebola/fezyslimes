@@ -2,20 +2,21 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ArrowRight, UserPlus, LogIn } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from './AuthContext';
 
 export default function WelcomePopup() {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
+  const { currentUser } = useAuth();
 
   useEffect(() => {
-    // Check if we've shown this popup before
-    const hasSeenPopup = localStorage.getItem('fezyslimes_welcome_seen');
-    if (!hasSeenPopup) {
+    // Show popup on every refresh if the user is not logged in
+    if (!currentUser) {
       // Delay slightly for premium effect
       const timer = setTimeout(() => setIsOpen(true), 1200);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [currentUser]);
 
   // Prevent scrolling while welcome popup is open
   useEffect(() => {
@@ -31,7 +32,6 @@ export default function WelcomePopup() {
 
   const handleClose = () => {
     setIsOpen(false);
-    localStorage.setItem('fezyslimes_welcome_seen', 'true');
   };
 
   const handleAction = (route) => {
@@ -72,8 +72,22 @@ export default function WelcomePopup() {
             </button>
 
             <div className="p-8 relative z-10 flex flex-col items-center">
-              {/* Large Logo */}
-              <img src="/logo.png" alt="FezySlimes Logo" className="h-28 w-auto mb-6 drop-shadow-md hover:scale-105 transition-transform duration-300" />
+              {/* Image + Logo — side by side on sm+, stacked on xs */}
+              <div className="w-full flex flex-col sm:flex-row items-center gap-4 mb-6">
+                <img
+                  src="/welcome_slime.jpg"
+                  alt="FezySlimes Welcome"
+                  className="flex-1 w-full sm:w-auto h-44 sm:h-48 object-cover rounded-2xl shadow-md hover:scale-[1.02] transition-transform duration-300 border border-pink-100"
+                />
+                <div className="flex-shrink-0 flex items-center justify-center bg-gradient-to-br from-pink-50 to-cyan-50 border border-pink-100 rounded-2xl shadow-inner p-4 h-44 sm:h-48 w-full sm:w-auto sm:aspect-square">
+                  <img
+                    src="/logo.png"
+                    alt="FezySlimes Logo"
+                    className="h-32 sm:h-36 w-auto object-contain drop-shadow-md"
+                  />
+                </div>
+              </div>
+
               
               {/* Title & Subtitle */}
               <h2 className="text-2xl font-black text-slate-800 text-center mb-1">
