@@ -17,6 +17,10 @@ import VerifyEmail from './pages/VerifyEmail';
 import ConfirmOrder from './pages/ConfirmOrder';
 import AdminLogin from './pages/admin/AdminLogin';
 import AdminDashboard from './pages/admin/index';
+import PrivacyPolicy from './pages/legal/PrivacyPolicy';
+import TermsAndConditions from './pages/legal/TermsAndConditions';
+import RefundPolicy from './pages/legal/RefundPolicy';
+import FAQ from './pages/legal/FAQ';
 import { reviews } from './data'; // reviews are static UI content, not Firestore data
 import { getWishlist, updateWishlist } from './services/dbService';
 import toast from 'react-hot-toast';
@@ -208,12 +212,8 @@ function Layout() {
       <WelcomePopup />
       <NewsletterPopup />
 
-      {/* Animated Interactive Background layers */}
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden bg-gradient-to-br from-teal-50 via-white to-pink-50 animate-gradient">
-        <div className="absolute top-[10%] left-[5%] w-96 h-96 rounded-full bg-cyan-200/30 blur-[100px] animate-float" />
-        <div className="absolute bottom-[20%] right-[10%] w-[500px] h-[500px] rounded-full bg-pink-200/30 blur-[120px] animate-float-delayed" />
-        <div className="absolute top-[40%] right-[30%] w-72 h-72 rounded-full bg-teal-200/20 blur-[80px] animate-float" />
-      </div>
+      {/* Clean Background layer */}
+      <div className="fixed inset-0 z-0 pointer-events-none bg-gradient-to-br from-teal-50/60 via-white to-pink-50/60" />
 
       <div className="relative z-10 flex flex-col min-h-screen">
         <Navbar 
@@ -263,6 +263,11 @@ export default function App() {
             <Route path="forgot-password" element={<ForgotPassword />} />
             <Route path="verify-email" element={<VerifyEmail />} />
             <Route path="confirm-order" element={<ConfirmOrder />} />
+            {/* Legal pages */}
+            <Route path="privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="terms" element={<TermsAndConditions />} />
+            <Route path="refund-policy" element={<RefundPolicy />} />
+            <Route path="faq" element={<FAQ />} />
           </Route>
           {/* Admin routes (standalone, no main layout/navbar) */}
           <Route path="/admin" element={<AdminDashboard />} />

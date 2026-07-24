@@ -1,44 +1,12 @@
 @import "tailwindcss";
 
 @layer utilities {
-  .animate-spin-slow {
-    animation: spin 12s linear infinite;
-  }
-  .animate-float {
-    animation: float 6s ease-in-out infinite;
-  }
-  .animate-float-delayed {
-    animation: float 6s ease-in-out 3s infinite;
-  }
-  .animate-gradient {
-    animation: gradient-shift 15s ease infinite;
-    background-size: 400% 400%;
-  }
-  .animate-bob {
-    animation: bob 3s ease-in-out infinite;
-  }
   .bg-glass {
     @apply bg-white/70 backdrop-blur-md border border-white/50 shadow-xl shadow-pink-100/50;
   }
   .bg-glass-card {
     @apply bg-white/80 backdrop-blur-sm border border-white/60 shadow-lg shadow-teal-100/40;
   }
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-20px); }
-}
-
-@keyframes bob {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
-}
-
-@keyframes gradient-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
 }
 
 ::-webkit-scrollbar { width: 8px; }
@@ -62,3 +30,11 @@
   animation: marquee 25s linear infinite;
 }
 
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-bob {
+  animation: bob 4s ease-in-out infinite;
+}

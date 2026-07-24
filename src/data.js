@@ -96,10 +96,11 @@ export const reviews = [
 ];
 
 export const shippingLocations = [
-  { name: 'Lagos', price: 2500 },
-  { name: 'Ibadan', price: 3500 },
-  { name: 'Ogun State', price: 3000 },
-  { name: 'Oyo State', price: 3500 },
-  { name: 'Abuja', price: 5000 },
-  { name: 'Port Harcourt', price: 4500 }
+  { name: 'Lekki', price: 4000 },
+  { name: 'VI (Victoria Island)', price: 6000 },
+  { name: 'Mainland', price: 10000 },
+  { name: 'Abuja', price: 16000 },
+  { name: 'Ibadan', price: 8000 },
+  { name: 'Oyo State', price: 15000 },
+  { name: 'Port Harcourt', price: 15000 },
 ];

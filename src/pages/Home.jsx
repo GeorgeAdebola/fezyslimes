@@ -113,22 +113,19 @@ export default function Home() {
             </motion.div>
           </motion.div>
 
-          {/* Interactive Hero Visual */}
-          <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8, ease: "easeOut" }} className="relative flex justify-center items-center lg:justify-end">
-            <div className="relative w-[350px] h-[350px] sm:w-[500px] sm:h-[500px]">
-              <motion.div animate={{ y: [0, -20, 0] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }} className="absolute top-10 right-10 w-16 h-16 bg-pink-300/30 rounded-full backdrop-blur-xl border border-white/40 shadow-xl z-20" />
-              <motion.div animate={{ y: [0, 30, 0] }} transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 1 }} className="absolute bottom-20 left-10 w-24 h-24 bg-cyan-300/30 rounded-full backdrop-blur-xl border border-white/40 shadow-xl z-20" />
-              
-              <div className="absolute inset-0 bg-gradient-to-tr from-cyan-300/40 via-teal-200/40 to-pink-300/40 rounded-[40%_60%_70%_30%/40%_50%_60%_50%] animate-spin-slow shadow-2xl backdrop-blur-sm border-2 border-white/50 flex items-center justify-center">
+          {/* Hero Visual */}
+          <div className="relative flex justify-center items-center lg:justify-end">
+            <div className="relative w-[300px] h-[300px] sm:w-[450px] sm:h-[450px]">
+              <div className="absolute inset-0 bg-gradient-to-tr from-cyan-300/40 via-teal-200/40 to-pink-300/40 rounded-[40%_60%_70%_30%/40%_50%_60%_50%] shadow-2xl backdrop-blur-sm border-2 border-white/50 flex items-center justify-center">
                 <div className="relative z-10 text-center flex flex-col items-center">
-                  <span className="text-8xl select-none animate-bounce drop-shadow-xl">✨</span>
+                  <span className="text-7xl sm:text-8xl select-none drop-shadow-xl">✨</span>
                   <span className="mt-6 bg-white/90 backdrop-blur-md px-4 py-2 rounded-full text-xs font-black text-cyan-500 uppercase tracking-widest shadow-lg border border-white">
                     Magical Textures
                   </span>
                 </div>
               </div>
             </div>
-          </motion.div>
+          </div>
         </div>
       </section>
 
@@ -407,66 +404,94 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6 relative z-10">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 bg-white/60 backdrop-blur-xl border border-white/80 rounded-[3rem] p-8 lg:p-12 shadow-2xl shadow-pink-100/40">
             
-            <div className="text-left space-y-8">
-              <div className="space-y-4">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyan-100 border border-cyan-200 text-cyan-600 text-xs font-bold uppercase tracking-wider">
-                  Contact Us
+            <div className="text-left space-y-8 flex flex-col justify-between">
+              <div className="space-y-6">
+                <div className="space-y-4">
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyan-100 border border-cyan-200 text-cyan-600 text-xs font-bold uppercase tracking-wider">
+                    Contact Us
+                  </div>
+                  <h2 className="text-3xl sm:text-5xl font-black text-slate-800">Let's Connect</h2>
+                  <p className="text-base text-slate-600 font-medium leading-relaxed max-w-md">
+                    Have questions about textures, custom birthday orders, or shipping? Chat with Tire &amp; Tase directly!
+                  </p>
                 </div>
-                <h2 className="text-3xl sm:text-5xl font-black text-slate-800">Let's Connect</h2>
-                <p className="text-base text-slate-600 font-medium leading-relaxed max-w-md">
-                  Have questions about textures, custom birthday orders, or shipping? Chat with Tire &amp; Tase directly!
-                </p>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <a href="https://wa.me/2349155577753" target="_blank" rel="noreferrer" className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm hover:shadow-lg hover:border-cyan-300 transition-all flex items-start gap-4 group">
-                  <div className="p-4 bg-green-50 text-green-500 rounded-2xl group-hover:bg-green-500 group-hover:text-white transition-all">
-                    <MessageSquare className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <span className="block text-xs text-slate-400 font-bold uppercase">WhatsApp Chat</span>
-                    <span className="text-base text-slate-800 font-black block mt-1">09155577753</span>
-                    <span className="text-xs text-cyan-500 font-bold block mt-2 group-hover:underline">Send message &rarr;</span>
-                  </div>
-                </a>
-
-                <a href="mailto:fezyslimes@gmail.com" className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm hover:shadow-lg hover:border-pink-300 transition-all flex items-start gap-4 group">
-                  <div className="p-4 bg-pink-50 text-pink-500 rounded-2xl group-hover:bg-pink-500 group-hover:text-white transition-all">
-                    <Mail className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <span className="block text-xs text-slate-400 font-bold uppercase">Email Support</span>
-                    <span className="text-base text-slate-800 font-black block mt-1">fezyslimes@gmail</span>
-                    <span className="text-xs text-pink-500 font-bold block mt-2 group-hover:underline">Write email &rarr;</span>
-                  </div>
-                </a>
-              </div>
-
-              <div className="bg-slate-50/80 border border-slate-100 p-8 rounded-3xl space-y-6">
-                <h4 className="font-black text-slate-800 text-base flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-cyan-500" /> Shipping Rates
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  {shippingLocations.map((loc) => (
-                    <div key={loc.name} className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm">
-                      <span className="block text-sm font-bold text-slate-700">{loc.name}</span>
-                      <span className="text-xs text-pink-500 font-black">₦{loc.price.toLocaleString()}</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <a href="https://wa.me/2349155577753" target="_blank" rel="noreferrer" className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm hover:shadow-lg hover:border-cyan-300 transition-all flex items-start gap-4 group">
+                    <div className="p-4 bg-green-50 text-green-500 rounded-2xl group-hover:bg-green-500 group-hover:text-white transition-all">
+                      <MessageSquare className="w-6 h-6" />
                     </div>
-                  ))}
+                    <div>
+                      <span className="block text-xs text-slate-400 font-bold uppercase">WhatsApp Chat</span>
+                      <span className="text-base text-slate-800 font-black block mt-1">09155577753</span>
+                      <span className="text-xs text-cyan-500 font-bold block mt-2 group-hover:underline">Send message &rarr;</span>
+                    </div>
+                  </a>
+
+                  <a href="mailto:fezyslimes@gmail.com" className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm hover:shadow-lg hover:border-pink-300 transition-all flex items-start gap-4 group">
+                    <div className="p-4 bg-pink-50 text-pink-500 rounded-2xl group-hover:bg-pink-500 group-hover:text-white transition-all">
+                      <Mail className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <span className="block text-xs text-slate-400 font-bold uppercase">Email Support</span>
+                      <span className="text-base text-slate-800 font-black block mt-1">fezyslimes@gmail.com</span>
+                      <span className="text-xs text-pink-500 font-bold block mt-2 group-hover:underline">Write email &rarr;</span>
+                    </div>
+                  </a>
+                </div>
+              </div>
+
+              {/* Resized compact location supporting note */}
+              <div className="bg-slate-50/90 border border-slate-200/70 p-3.5 sm:p-4 rounded-xl flex items-center gap-3 shadow-xs text-left mt-3 max-w-lg">
+                <div className="p-2 bg-white rounded-lg text-cyan-600 shadow-xs border border-slate-100 flex-shrink-0">
+                  <MapPin className="w-4 h-4 text-cyan-500" />
+                </div>
+                <div>
+                  <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1">
+                    Lagos, Nigeria
+                  </h5>
+                  <p className="text-[11px] sm:text-xs text-slate-500 font-normal leading-snug mt-0.5">
+                    Every product is handmade in Lagos, Nigeria and shipped securely nationwide with tracked delivery.
+                  </p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-cyan-200 to-pink-200 border-4 border-white shadow-xl rounded-[3rem] p-4 h-80 sm:h-auto min-h-[300px] flex items-center justify-center relative overflow-hidden transform lg:rotate-2">
-              <div className="absolute inset-0 bg-white/40 backdrop-blur-sm" />
-              <div className="text-center space-y-4 z-10 bg-white/80 backdrop-blur-md p-8 rounded-[2rem] border border-white shadow-lg mx-6">
-                <span className="text-6xl drop-shadow-md">📍</span>
-                <h4 className="font-black text-slate-800 text-2xl">Lagos, Nigeria</h4>
-                <p className="text-sm text-slate-600 font-medium max-w-xs mx-auto leading-relaxed">
-                  Every product is handmade in Lagos, Nigeria and shipped securely nationwide with tracked delivery.
-                </p>
+            {/* Formatted Shipping Rates Table */}
+            <div className="bg-slate-50/80 border border-slate-100 p-6 sm:p-8 rounded-3xl space-y-6 text-left flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-black text-slate-800 text-lg flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-cyan-500" /> Shipping Rates
+                  </h4>
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nationwide</span>
+                </div>
+                
+                <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+                  <table className="w-full text-left text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 text-xs font-black uppercase tracking-wider">
+                        <th className="py-3 px-4 sm:px-6">Location</th>
+                        <th className="py-3 px-4 sm:px-6 text-right">Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
+                      {shippingLocations.map((loc) => (
+                        <tr key={loc.name} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-4 sm:px-6 text-slate-800 font-bold">{loc.name}</td>
+                          <td className="py-3 px-4 sm:px-6 text-right font-black text-pink-500">₦{loc.price.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
+
+              <p className="text-xs text-slate-400 font-semibold text-center pt-2">
+                * Rates are calculated automatically during checkout based on your delivery address.
+              </p>
             </div>
+
           </div>
         </div>
       </section>
@@ -489,28 +514,48 @@ export default function Home() {
                   {section === 'care' ? 'Slime Care' : section}
                 </button>
               ))}
+              <a href="/track-order" className="text-sm text-slate-500 hover:text-cyan-500 transition-colors font-bold uppercase tracking-wide">Track Order</a>
             </div>
           </div>
 
           <div>
-              <h4 className="text-sm font-black uppercase tracking-wider text-slate-800 mb-6">Socials</h4>
-              <div className="flex flex-col gap-4">
-                <a href="https://tiktok.com/@Fezyslimes" target="_blank" rel="noreferrer" className="text-sm text-slate-500 hover:text-pink-500 transition-colors font-bold flex items-center gap-2"><Camera className="w-4 h-4"/> TikTok - Fezyslimes</a>
-                <a href="https://snapchat.com/add/fezyslimes.ng" target="_blank" rel="noreferrer" className="text-sm text-slate-500 hover:text-pink-500 transition-colors font-bold flex items-center gap-2"><Camera className="w-4 h-4"/> Snapchat - fezyslimes.ng</a>
-              </div>
+            <h4 className="text-sm font-black uppercase tracking-wider text-slate-800 mb-6">Socials</h4>
+            <div className="flex flex-col gap-4">
+              <a href="https://instagram.com/fezyslimes" target="_blank" rel="noreferrer" className="text-sm text-slate-500 hover:text-pink-500 transition-colors font-bold flex items-center gap-2">
+                <Camera className="w-4 h-4"/> Instagram - @fezyslimes
+              </a>
+              <a href="https://tiktok.com/@Fezyslimes" target="_blank" rel="noreferrer" className="text-sm text-slate-500 hover:text-pink-500 transition-colors font-bold flex items-center gap-2">
+                <Camera className="w-4 h-4"/> TikTok - @Fezyslimes
+              </a>
+              <a href="https://snapchat.com/add/fezyslimes.ng" target="_blank" rel="noreferrer" className="text-sm text-slate-500 hover:text-pink-500 transition-colors font-bold flex items-center gap-2">
+                <Camera className="w-4 h-4"/> Snapchat - fezyslimes.ng
+              </a>
+              <a href="https://wa.me/2349155577753" target="_blank" rel="noreferrer" className="text-sm text-slate-500 hover:text-green-500 transition-colors font-bold flex items-center gap-2">
+                <MessageSquare className="w-4 h-4"/> WhatsApp Us
+              </a>
+            </div>
           </div>
 
           <div>
-            <h4 className="text-sm font-black uppercase tracking-wider text-slate-800 mb-6">Quality Guarantee</h4>
-            <p className="text-sm text-slate-500 font-medium leading-relaxed">
-              All ingredients are child-safe and non-toxic. We guarantee premium stretch and long lasting quality in every batch.
-            </p>
+            <h4 className="text-sm font-black uppercase tracking-wider text-slate-800 mb-6">Legal &amp; Support</h4>
+            <div className="flex flex-col gap-4">
+              <a href="/terms" className="text-sm text-slate-500 hover:text-cyan-500 transition-colors font-bold">Terms &amp; Conditions</a>
+              <a href="/privacy-policy" className="text-sm text-slate-500 hover:text-cyan-500 transition-colors font-bold">Privacy Policy</a>
+              <a href="/refund-policy" className="text-sm text-slate-500 hover:text-cyan-500 transition-colors font-bold">Return / Refund Policy</a>
+              <a href="/faq" className="text-sm text-slate-500 hover:text-cyan-500 transition-colors font-bold">FAQ</a>
+            </div>
+            <div className="mt-8">
+              <h4 className="text-sm font-black uppercase tracking-wider text-slate-800 mb-3">Quality Guarantee</h4>
+              <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                All ingredients are child-safe and non-toxic. Premium stretch and quality guaranteed in every batch.
+              </p>
+            </div>
           </div>
         </div>
 
         <div className="max-w-7xl mx-auto px-6 border-t border-slate-100 mt-12 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-400 font-bold">
           <span>&copy; {new Date().getFullYear()} FezySlimes. All rights reserved.</span>
-          <span className="flex items-center gap-1">Made with 🤍 in Nigeria.</span>
+          <span className="flex items-center gap-1">Made with 🤍 in Lagos, Nigeria.</span>
         </div>
       </footer>
     </div>
