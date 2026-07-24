@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Package, ShoppingBag, LogOut, Plus, Trash2, Edit2,
   X, Upload, CheckCircle2, AlertCircle, RefreshCw, Search, Filter,
-  TrendingUp, Users, DollarSign, Clock, Shield, ChevronDown, Image as ImageIcon
+  TrendingUp, Users, DollarSign, Clock, Shield, ChevronDown, Image as ImageIcon, Truck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ORDER_STATUSES } from '../../services/orderService';
@@ -480,6 +480,7 @@ function OrdersSection({ authFetch }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [newStatus, setNewStatus] = useState('');
+  const [trackingId, setTrackingId] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
 
   const loadOrders = async () => {
@@ -511,7 +512,7 @@ function OrdersSection({ authFetch }) {
       const res = await authFetch(`/api/admin/orders/${selectedOrder.id}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trackingStatus: newStatus, deliveryStatus: newStatus })
+        body: JSON.stringify({ trackingStatus: newStatus, deliveryStatus: newStatus, trackingId })
       });
       if (!res.ok) throw new Error('Failed to update status.');
       toast.success('Order status updated! ✅');
@@ -600,7 +601,7 @@ function OrdersSection({ authFetch }) {
                   <td className="px-5 py-4 text-[11px] font-medium text-slate-500">{formatDate(order.createdAt)}</td>
                   <td className="px-5 py-4">
                     <button
-                      onClick={() => { setSelectedOrder(order); setNewStatus(order.trackingStatus || ''); }}
+                      onClick={() => { setSelectedOrder(order); setNewStatus(order.trackingStatus || ''); setTrackingId(order.trackingId || ''); }}
                       className="px-3 py-1.5 bg-cyan-50 hover:bg-cyan-100 text-cyan-600 font-black rounded-lg text-[10px] transition-all"
                     >
                       Update Status
@@ -635,7 +636,7 @@ function OrdersSection({ authFetch }) {
               </div>
               <p className="text-xs font-bold text-slate-500 mb-1">Order: <span className="text-slate-700 font-mono">{selectedOrder.orderId}</span></p>
               <p className="text-xs font-bold text-slate-500 mb-4">Customer: <span className="text-slate-700">{selectedOrder.customer?.name}</span></p>
-              <div className="mb-5">
+              <div className="mb-4">
                 <label className="block text-xs font-bold text-slate-500 mb-2">New Status</label>
                 <select value={newStatus} onChange={e => setNewStatus(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-cyan-400 appearance-none">
@@ -644,6 +645,17 @@ function OrdersSection({ authFetch }) {
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
+              </div>
+              <div className="mb-5">
+                <label className="block text-xs font-bold text-slate-500 mb-2">Manual Tracking Number (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. DHL-987654"
+                  value={trackingId}
+                  onChange={e => setTrackingId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-cyan-400"
+                />
+                <p className="text-[10px] text-slate-400 mt-1 font-semibold">Enter the tracking number once you book the courier.</p>
               </div>
               <div className="flex gap-3">
                 <button onClick={handleStatusUpdate} disabled={isUpdating || !newStatus}
@@ -732,6 +744,119 @@ function OverviewSection({ authFetch }) {
   );
 }
 
+// ---- Shipping Rates Settings Section ----
+function ShippingRatesSection({ authFetch }) {
+  const [rates, setRates] = useState({
+    "Lagos-Uber": 3000,
+    "Lagos-Gokada": 2500,
+    "Ogun-DHL": 3500,
+    "Oyo-DHL": 3500,
+    "Abuja-DHL": 5000,
+    "PH-DHL": 4500
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const loadRates = async () => {
+      setIsLoading(true);
+      try {
+        const res = await fetch(`${API_BASE}/api/shipping-rates`);
+        if (res.ok) {
+          const data = await res.json();
+          setRates(prev => ({ ...prev, ...data }));
+        }
+      } catch (err) {
+        toast.error('Failed to load shipping rates.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadRates();
+  }, []);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      const res = await authFetch('/api/admin/shipping-rates', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rates)
+      });
+      if (!res.ok) throw new Error('Failed to update shipping rates.');
+      toast.success('Shipping rates updated successfully! 🚚');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRateChange = (key, value) => {
+    const numericVal = value === '' ? 0 : parseInt(value, 10);
+    setRates(prev => ({
+      ...prev,
+      [key]: isNaN(numericVal) ? 0 : numericVal
+    }));
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-16">
+        <RefreshCw className="w-8 h-8 text-slate-300 animate-spin" />
+      </div>
+    );
+  }
+
+  const rateKeys = [
+    { key: 'Lagos-Uber', label: 'Lagos (Uber Courier)' },
+    { key: 'Lagos-Gokada', label: 'Lagos (Gokada Bike)' },
+    { key: 'Ogun-DHL', label: 'Ogun State (DHL)' },
+    { key: 'Oyo-DHL', label: 'Oyo State (DHL)' },
+    { key: 'Abuja-DHL', label: 'Abuja FCT (DHL)' },
+    { key: 'PH-DHL', label: 'Port Harcourt / Rivers State (DHL)' }
+  ];
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h2 className="text-2xl font-black text-slate-800">Shipping & Delivery Rates</h2>
+        <p className="text-slate-500 text-sm font-medium">Configure flat-rate fees for delivery zones and couriers</p>
+      </div>
+
+      <form onSubmit={handleSave} className="bg-white border border-slate-200 rounded-3xl p-6 space-y-6 shadow-sm">
+        <div className="space-y-4">
+          {rateKeys.map(({ key, label }) => (
+            <div key={key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 last:border-0 last:pb-0">
+              <label className="text-sm font-bold text-slate-600">{label}</label>
+              <div className="relative max-w-[200px] w-full">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">₦</span>
+                <input
+                  type="number"
+                  min="0"
+                  required
+                  value={rates[key] ?? ''}
+                  onChange={(e) => handleRateChange(key, e.target.value)}
+                  className="w-full pl-8 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-slate-800 focus:outline-none focus:border-cyan-400 transition-colors"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="submit"
+          disabled={isSaving}
+          className="w-full py-3.5 bg-cyan-400 hover:bg-cyan-500 disabled:bg-slate-200 text-white font-black rounded-2xl shadow-lg shadow-cyan-200 transition-all active:scale-95 text-base flex items-center justify-center gap-2"
+        >
+          {isSaving ? 'Saving Rates...' : 'Save Shipping Rates'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 // ---- Main Admin Dashboard ----
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -772,6 +897,7 @@ export default function AdminDashboard() {
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'products', label: 'Products', icon: Package },
     { id: 'orders', label: 'Orders', icon: ShoppingBag },
+    { id: 'shipping_rates', label: 'Shipping Rates', icon: Truck },
   ];
 
   if (!token) return null;
@@ -852,6 +978,7 @@ export default function AdminDashboard() {
             {activeTab === 'overview' && <OverviewSection authFetch={authFetch} />}
             {activeTab === 'products' && <ProductsSection authFetch={authFetch} />}
             {activeTab === 'orders' && <OrdersSection authFetch={authFetch} />}
+            {activeTab === 'shipping_rates' && <ShippingRatesSection authFetch={authFetch} />}
           </motion.div>
         </main>
       </div>

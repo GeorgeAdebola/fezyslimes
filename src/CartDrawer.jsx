@@ -11,7 +11,7 @@ import { API_BASE } from './services/productService';
 
 const STEPS = ['Cart', 'Details', 'Shipping', 'Payment'];
 
-export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantity, onRemoveItem, onClearCart }) {
+export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantity, onRemoveItem, onClearCart, onAddToCart }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [currentStep, setCurrentStep] = useState(0); // 0: Cart, 1: Details, 2: Shipping, 3: Payment, 4: Success
@@ -19,16 +19,34 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [selectedState, setSelectedState] = useState(shippingLocations[0].name);
+  const [selectedState, setSelectedState] = useState('Lagos');
   const [city, setCity] = useState('');
   const [streetAddress, setStreetAddress] = useState('');
   const [landmark, setLandmark] = useState('');
   const [notes, setNotes] = useState('');
-  const [shippingMethod, setShippingMethod] = useState('standard');
+  const [selectedCourier, setSelectedCourier] = useState('Uber');
+  const [rates, setRates] = useState({});
   
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [createdOrderId, setCreatedOrderId] = useState('');
   const [createdTracking, setCreatedTracking] = useState('');
+
+  // Fetch active shipping rates
+  useEffect(() => {
+    if (!isOpen) return;
+    const fetchRates = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/shipping-rates`);
+        if (response.ok) {
+          const data = await response.json();
+          setRates(data);
+        }
+      } catch (err) {
+        console.error("Error fetching shipping rates:", err);
+      }
+    };
+    fetchRates();
+  }, [isOpen]);
 
   // Auto pre-fill default address
   useEffect(() => {
@@ -57,24 +75,68 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
     prefillDefaultAddress();
   }, [currentUser, isOpen]);
 
+  const ALLOWED_STATES = [
+    'Lagos',
+    'Ogun State',
+    'Oyo State',
+    'Abuja (FCT)',
+    'Port Harcourt / Rivers State'
+  ];
+  const isStateSupported = ALLOWED_STATES.includes(selectedState);
+
+  const getDeliveryFee = () => {
+    if (!isStateSupported) return 0;
+    let key = '';
+    if (selectedState === 'Lagos') {
+      key = `Lagos-${selectedCourier}`;
+    } else if (selectedState === 'Ogun State') {
+      key = 'Ogun-DHL';
+    } else if (selectedState === 'Oyo State') {
+      key = 'Oyo-DHL';
+    } else if (selectedState === 'Abuja (FCT)') {
+      key = 'Abuja-DHL';
+    } else if (selectedState === 'Port Harcourt / Rivers State') {
+      key = 'PH-DHL';
+    }
+    
+    const fallbackRates = {
+      "Lagos-Uber": 3000,
+      "Lagos-Gokada": 2500,
+      "Ogun-DHL": 3500,
+      "Oyo-DHL": 3500,
+      "Abuja-DHL": 5000,
+      "PH-DHL": 4500
+    };
+    return rates[key] !== undefined ? rates[key] : (fallbackRates[key] || 0);
+  };
+
   const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
-  const activeShipping = shippingLocations.find(loc => loc.name === selectedState);
-  const baseShippingCost = activeShipping ? activeShipping.price : 0;
-  const shippingCost = shippingMethod === 'express' ? baseShippingCost + 1500 : baseShippingCost;
+  const shippingCost = getDeliveryFee();
   const total = subtotal + shippingCost;
+
+  const slimeItems = cartItems.filter(item => item.id !== 'slime-activator');
+  const numSlimes = slimeItems.reduce((acc, item) => acc + item.quantity, 0);
+  const hasActivator = cartItems.some(item => item.id === 'slime-activator');
+  const canProceedToCheckout = numSlimes >= 4 || hasActivator;
 
   const handleClose = () => {
     if (currentStep === 4) setCurrentStep(0);
     onClose();
   };
 
-  const handleNext = () => setCurrentStep(prev => Math.min(prev + 1, 3));
+  const handleNext = () => {
+    if (currentStep === 0 && !canProceedToCheckout) {
+      toast.error('Please add a Slime Activator to continue.');
+      return;
+    }
+    setCurrentStep(prev => Math.min(prev + 1, 3));
+  };
   const handleBack = () => setCurrentStep(prev => Math.max(prev - 1, 0));
 
   const isDetailsValid = fullName.trim() !== '' && email.trim() !== '' && phone.trim() !== '';
-  const isShippingValid = selectedState.trim() !== '' && city.trim() !== '' && streetAddress.trim() !== '';
+  const isShippingValid = isStateSupported && city.trim() !== '' && streetAddress.trim() !== '';
   
-  const isPaymentAllowed = isDetailsValid && isShippingValid && shippingMethod && cartItems.length > 0;
+  const isPaymentAllowed = isDetailsValid && isShippingValid && cartItems.length > 0;
 
   const handleCheckoutSubmit = (e) => {
     e.preventDefault();
@@ -123,7 +185,16 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
               variable_name: "phone_number",
               value: phone
             }
-          ]
+          ],
+          selectedZone: selectedState,
+          selectedCourier: selectedState === 'Lagos' ? selectedCourier : 'DHL',
+          deliveryFee: shippingCost,
+          items: cartItems,
+          customerName: fullName,
+          phone,
+          address: `${streetAddress}, ${city}, ${selectedState}`,
+          landmark,
+          notes
         },
         onSuccess: async (transaction) => {
           try {
@@ -141,7 +212,10 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                 landmark,
                 notes,
                 total,
-                items: cartItems
+                items: cartItems,
+                selectedZone: selectedState,
+                selectedCourier: selectedState === 'Lagos' ? selectedCourier : 'DHL',
+                deliveryFee: shippingCost
               })
             });
 
@@ -226,6 +300,27 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                 {/* STEP 0: CART */}
                 {currentStep === 0 && (
                   <motion.div key="step-0" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-6 space-y-4">
+                    {!canProceedToCheckout && cartItems.length > 0 && (
+                      <div className="bg-pink-50 border border-pink-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-inner mb-2">
+                        <div className="flex items-center gap-3 text-pink-500 font-bold text-sm">
+                          <span className="text-xl">⚠️</span>
+                          <p>Add a slime activator to complete your order.</p>
+                        </div>
+                        <button 
+                          onClick={() => onAddToCart({
+                            id: 'slime-activator',
+                            name: 'Slime Activator (Borax Spray)',
+                            price: 1500,
+                            category: 'care',
+                            image: 'https://images.unsplash.com/photo-1607613009820-a29f7bb81c04?auto=format&fit=crop&w=600&q=80'
+                          })}
+                          className="px-4 py-2 bg-pink-400 hover:bg-pink-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md whitespace-nowrap active:scale-95 transition-all"
+                        >
+                          Add Activator
+                        </button>
+                      </div>
+                    )}
+                    
                     {cartItems.length === 0 ? (
                       <div className="flex flex-col items-center justify-center text-center text-slate-500 h-64">
                         <div className="w-20 h-20 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center mb-4 shadow-inner">
@@ -288,10 +383,13 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                       <div className="space-y-4">
                         <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">State</label>
-                          <select required value={selectedState} onChange={(e) => setSelectedState(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 outline-none font-medium transition-all appearance-none">
-                            {shippingLocations.map((loc) => (
-                              <option key={loc.name} value={loc.name}>{loc.name}</option>
-                            ))}
+                          <select required value={selectedState} onChange={(e) => { setSelectedState(e.target.value); if(e.target.value !== 'Lagos') setSelectedCourier('DHL'); }} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 outline-none font-medium transition-all appearance-none">
+                            <option value="Lagos">Lagos</option>
+                            <option value="Ogun State">Ogun State</option>
+                            <option value="Oyo State">Oyo State</option>
+                            <option value="Abuja (FCT)">Abuja (FCT)</option>
+                            <option value="Port Harcourt / Rivers State">Port Harcourt / Rivers State</option>
+                            <option value="Other">Other (Unsupported)</option>
                           </select>
                         </div>
                         <div>
@@ -309,24 +407,42 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                       </div>
                     </div>
 
-                    <div>
-                      <h3 className="text-xl font-black text-slate-800 border-b border-slate-100 pb-2 mb-4">Shipping Method <span className="text-red-400">*</span></h3>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div onClick={() => setShippingMethod('standard')} className={`border rounded-2xl p-4 cursor-pointer transition-all ${shippingMethod === 'standard' ? 'border-cyan-400 bg-cyan-50' : 'border-slate-200 hover:border-cyan-200'}`}>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="font-bold text-slate-800 text-sm">Standard</span>
-                            {shippingMethod === 'standard' && <CheckCircle2 className="w-4 h-4 text-cyan-500" />}
-                          </div>
-                          <p className="text-xs text-slate-500 font-medium">3-5 Business Days</p>
-                        </div>
-                        <div onClick={() => setShippingMethod('express')} className={`border rounded-2xl p-4 cursor-pointer transition-all ${shippingMethod === 'express' ? 'border-cyan-400 bg-cyan-50' : 'border-slate-200 hover:border-cyan-200'}`}>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="font-bold text-slate-800 text-sm">Express</span>
-                            {shippingMethod === 'express' && <CheckCircle2 className="w-4 h-4 text-cyan-500" />}
-                          </div>
-                          <p className="text-xs text-slate-500 font-medium">+₦1,500 (Next Day)</p>
-                        </div>
+                    {selectedState === 'Other' && (
+                      <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-red-600 text-xs font-black leading-relaxed">
+                        Sorry, we currently only deliver to Lagos, Ogun State, Oyo State, Abuja, and Port Harcourt.
                       </div>
+                    )}
+
+                    <div>
+                      <h3 className="text-xl font-black text-slate-800 border-b border-slate-100 pb-2 mb-4">Delivery Courier <span className="text-red-400">*</span></h3>
+                      {selectedState === 'Lagos' ? (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div onClick={() => setSelectedCourier('Uber')} className={`border rounded-2xl p-4 cursor-pointer transition-all ${selectedCourier === 'Uber' ? 'border-cyan-400 bg-cyan-50/50' : 'border-slate-200 hover:border-cyan-200'}`}>
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="font-bold text-slate-800 text-sm">Uber Courier</span>
+                              {selectedCourier === 'Uber' && <CheckCircle2 className="w-4 h-4 text-cyan-500" />}
+                            </div>
+                            <p className="text-xs text-slate-500 font-semibold">Flat Rate: ₦{getDeliveryFee().toLocaleString()}</p>
+                          </div>
+                          <div onClick={() => setSelectedCourier('Gokada')} className={`border rounded-2xl p-4 cursor-pointer transition-all ${selectedCourier === 'Gokada' ? 'border-cyan-400 bg-cyan-50/50' : 'border-slate-200 hover:border-cyan-200'}`}>
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="font-bold text-slate-800 text-sm">Gokada Bike</span>
+                              {selectedCourier === 'Gokada' && <CheckCircle2 className="w-4 h-4 text-cyan-500" />}
+                            </div>
+                            <p className="text-xs text-slate-500 font-semibold">Flat Rate: ₦{(rates['Lagos-Gokada'] !== undefined ? rates['Lagos-Gokada'] : 2500).toLocaleString()}</p>
+                          </div>
+                        </div>
+                      ) : isStateSupported ? (
+                        <div className="border border-cyan-400 bg-cyan-50/50 rounded-2xl p-4 flex justify-between items-center">
+                          <div>
+                            <span className="font-bold text-slate-800 text-sm block">DHL Express</span>
+                            <span className="text-xs text-slate-500 font-semibold">Flat Rate manual dispatch</span>
+                          </div>
+                          <span className="font-black text-slate-800 text-base">₦{getDeliveryFee().toLocaleString()}</span>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-red-500 font-black">Please select a supported state to see courier options.</p>
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -427,9 +543,9 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                         <span className="text-slate-800 font-black">₦{total.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-slate-500 font-bold">Estimated Delivery:</span>
+                        <span className="text-slate-500 font-bold">Courier Assigned:</span>
                         <span className="text-cyan-600 font-black">
-                          {shippingMethod === 'express' ? 'Next Day' : '3-5 Business Days'}
+                          {selectedState === 'Lagos' ? selectedCourier : 'DHL'}
                         </span>
                       </div>
                     </div>
@@ -472,7 +588,11 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                   <span>Subtotal</span>
                   <span className="font-black text-slate-800">₦{subtotal.toLocaleString()}</span>
                 </div>
-                <button onClick={handleNext} className="w-full py-4 bg-cyan-400 hover:bg-cyan-500 text-white font-black rounded-2xl shadow-lg shadow-cyan-200 transition-all active:scale-95 flex items-center justify-center gap-2 text-base">
+                <button 
+                  onClick={handleNext} 
+                  disabled={!canProceedToCheckout}
+                  className="w-full py-4 bg-cyan-400 hover:bg-cyan-500 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-black rounded-2xl shadow-lg shadow-cyan-200 transition-all active:scale-95 flex items-center justify-center gap-2 text-base"
+                >
                   Proceed <ArrowRight className="w-5 h-5" />
                 </button>
               </div>

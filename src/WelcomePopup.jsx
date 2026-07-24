@@ -58,7 +58,7 @@ export default function WelcomePopup() {
             animate={{ opacity: 1, scale: 1, y: 0 }} 
             exit={{ opacity: 0, scale: 0.95, y: 30 }} 
             transition={{ type: "spring", damping: 25, stiffness: 350 }}
-            className="relative bg-white/95 border border-white rounded-[2rem] w-full max-w-md shadow-2xl shadow-pink-200/40 flex flex-col z-10 overflow-hidden"
+            className="relative bg-white/95 border border-white rounded-[2rem] w-full max-w-3xl shadow-2xl shadow-pink-200/40 flex flex-col z-10 overflow-hidden"
           >
             {/* Soft pink/turquoise glow background */}
             <div className="absolute inset-0 bg-gradient-to-br from-teal-50/50 via-transparent to-pink-50/50 pointer-events-none" />
@@ -71,36 +71,33 @@ export default function WelcomePopup() {
               <X className="w-5 h-5" />
             </button>
 
-            <div className="p-8 relative z-10 flex flex-col items-center">
+            <div className="p-6 sm:p-8 relative z-10 grid gap-6 md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] md:items-center">
               {/* Image + Logo — side by side on sm+, stacked on xs */}
-              <div className="w-full flex flex-col sm:flex-row items-center gap-4 mb-6">
+              <div className="w-full rounded-3xl bg-pink-50/70 border border-pink-100 p-3 shadow-inner">
                 <img
                   src="/welcome_slime.jpg"
                   alt="FezySlimes Welcome"
-                  className="flex-1 w-full sm:w-auto h-44 sm:h-48 object-cover rounded-2xl shadow-md hover:scale-[1.02] transition-transform duration-300 border border-pink-100"
+                  className="block w-full h-auto max-h-[34vh] md:max-h-[460px] object-contain rounded-2xl shadow-md border border-pink-100 bg-white"
                 />
-                <div className="flex-shrink-0 flex items-center justify-center bg-gradient-to-br from-pink-50 to-cyan-50 border border-pink-100 rounded-2xl shadow-inner p-4 h-44 sm:h-48 w-full sm:w-auto sm:aspect-square">
-                  <img
-                    src="/logo.png"
-                    alt="FezySlimes Logo"
-                    className="h-32 sm:h-36 w-auto object-contain drop-shadow-md"
-                  />
-                </div>
               </div>
 
-              
+              <div className="flex flex-col items-center md:items-start text-center md:text-left md:pr-2">
               {/* Title & Subtitle */}
-              <h2 className="text-2xl font-black text-slate-800 text-center mb-1">
+              <h2 className="text-2xl font-black text-slate-800 mb-1">
                 Welcome to FezySlimes <span className="inline-block align-middle leading-none select-none text-xl mx-0.5">🤍</span>
               </h2>
-              <p className="text-cyan-600 font-extrabold text-sm mb-4 text-center tracking-wide">
+              <p className="text-cyan-600 font-extrabold text-sm mb-4 tracking-wide">
                 Nigeria's First Premium Slime Brand
               </p>
 
               {/* Description */}
-              <p className="text-slate-500 text-sm text-center mb-8 leading-relaxed font-medium">
+              <p className="text-slate-500 text-sm mb-4 leading-relaxed font-medium">
                 Sign in or create an account to enjoy faster checkout, order tracking, saved favourites, and exclusive slime releases.
               </p>
+              
+              <div className="bg-pink-50 border border-pink-100 rounded-xl p-3 mb-8 text-xs font-bold text-pink-600">
+                ✨ Note: A slime activator is required with every order (FREE when you buy 4 or more slimes!).
+              </div>
 
               {/* Action Buttons */}
               <div className="w-full flex flex-col gap-3">
@@ -120,13 +117,14 @@ export default function WelcomePopup() {
               </div>
 
               {/* Continue as Guest */}
-              <div className="mt-8 text-center">
+              <div className="mt-8 text-center md:text-left">
                 <button 
                   onClick={handleClose}
                   className="text-xs text-slate-400 hover:text-cyan-500 font-extrabold uppercase tracking-widest transition-colors flex items-center gap-1.5"
                 >
                   Continue as Guest <ArrowRight className="w-4 h-4" />
                 </button>
+              </div>
               </div>
             </div>
           </motion.div>

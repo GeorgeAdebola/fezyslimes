@@ -2,8 +2,6 @@ import { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronLeft, ChevronRight, Play } from 'lucide-react';
 
-// Vite glob import — paths are relative to project root and must be static strings
-// With { eager: true } on media assets, each module value IS the URL string directly
 const imageModules = import.meta.glob(
   '/src/assets/reviews/images/*.{jpg,jpeg,png,gif,webp}',
   { eager: true, query: '?url', import: 'default' }
@@ -13,26 +11,20 @@ const videoModules = import.meta.glob(
   { eager: true, query: '?url', import: 'default' }
 );
 
-const images = Object.values(imageModules);
-const videos = Object.values(videoModules);
+const imageItems = Object.values(imageModules).map((src, index) => ({
+  type: 'image',
+  src,
+  id: `img-${index}`
+}));
 
-console.log('[CustomerReviews] images found:', images.length, images);
-console.log('[CustomerReviews] videos found:', videos.length, videos);
+const videoItems = Object.values(videoModules).map((src, index) => ({
+  type: 'video',
+  src,
+  id: `vid-${index}`
+}));
 
-// Interleave images and videos for variety
-const buildItems = (imgs, vids) => {
-  const combined = [];
-  const maxLength = Math.max(imgs.length, vids.length);
-  for (let i = 0; i < maxLength; i++) {
-    if (imgs[i]) combined.push({ type: 'image', src: imgs[i], id: `img-${i}` });
-    if (vids[i]) combined.push({ type: 'video', src: vids[i], id: `vid-${i}` });
-  }
-  return combined;
-};
+const allItems = [...imageItems, ...videoItems];
 
-const items = buildItems(images, videos);
-
-// Video card with IntersectionObserver autoplay
 function ReviewVideo({ src }) {
   const videoRef = useRef(null);
 
@@ -52,7 +44,7 @@ function ReviewVideo({ src }) {
           }
         });
       },
-      { threshold: 0.4 }
+      { threshold: 0.45 }
     );
 
     observer.observe(el);
@@ -63,7 +55,7 @@ function ReviewVideo({ src }) {
     <video
       ref={videoRef}
       src={src}
-      className="w-full h-auto object-cover"
+      className="h-full w-full object-cover"
       loop
       muted
       playsInline
@@ -73,102 +65,113 @@ function ReviewVideo({ src }) {
   );
 }
 
-// Empty state
-function EmptyState() {
+function ScrollButton({ direction, onClick }) {
+  const Icon = direction === 'left' ? ChevronLeft : ChevronRight;
+
   return (
-    <div className="col-span-full text-center py-20 space-y-3">
-      <span className="text-5xl">🤍</span>
-      <p className="text-lg font-black text-slate-700">Reviews coming soon!</p>
-      <p className="text-sm text-slate-400 font-medium">
-        Drop images or videos into{' '}
-        <code className="bg-slate-100 px-2 py-0.5 rounded text-xs">
-          src/assets/reviews/images/
-        </code>{' '}
-        or{' '}
-        <code className="bg-slate-100 px-2 py-0.5 rounded text-xs">
-          src/assets/reviews/videos/
-        </code>
-      </p>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className="hidden md:flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-500 shadow-md shadow-pink-100/60 border border-white hover:text-cyan-500 hover:-translate-y-0.5 transition-all"
+      aria-label={direction === 'left' ? 'Scroll reviews left' : 'Scroll reviews right'}
+    >
+      <Icon className="h-5 w-5" />
+    </button>
+  );
+}
+
+function ReviewRow({ label, items, onSelect, delay = 0 }) {
+  const rowRef = useRef(null);
+
+  if (items.length === 0) return null;
+
+  const scrollRow = (direction) => {
+    const row = rowRef.current;
+    if (!row) return;
+    row.scrollBy({
+      left: direction * Math.min(row.clientWidth * 0.85, 520),
+      behavior: 'smooth'
+    });
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-40px' }}
+      transition={{ duration: 0.5, delay }}
+      className="space-y-4"
+    >
+      <div className="flex items-center justify-between gap-4 px-1">
+        <h3 className="text-lg sm:text-xl font-black text-slate-800">
+          {label}
+        </h3>
+        <div className="flex items-center gap-2">
+          <ScrollButton direction="left" onClick={() => scrollRow(-1)} />
+          <ScrollButton direction="right" onClick={() => scrollRow(1)} />
+        </div>
+      </div>
+
+      <div
+        ref={rowRef}
+        className="flex gap-3 sm:gap-4 overflow-x-auto overflow-y-hidden pb-4 snap-x snap-mandatory scroll-smooth overscroll-x-contain [-webkit-overflow-scrolling:touch]"
+      >
+        {items.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onSelect(item)}
+            className="group relative shrink-0 snap-start w-[58vw] max-w-[220px] sm:w-[220px] md:w-[240px] lg:w-[260px] aspect-[4/3] overflow-hidden rounded-[1.35rem] border-4 border-white bg-white/70 shadow-lg shadow-pink-100/60 cursor-pointer focus:outline-none focus:ring-4 focus:ring-cyan-200"
+          >
+            {item.type === 'video' ? (
+              <>
+                <ReviewVideo src={item.src} />
+                <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                  <div className="w-12 h-12 rounded-full bg-white/45 backdrop-blur-md flex items-center justify-center text-white shadow-lg">
+                    <Play fill="currentColor" className="w-5 h-5 ml-1" />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <img
+                src={item.src}
+                alt=""
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                onError={(e) => console.error('[CustomerReviews] Image load error:', e, item.src)}
+              />
+            )}
+          </button>
+        ))}
+      </div>
+    </motion.div>
   );
 }
 
 export default function CustomerReviews() {
   const [selectedItem, setSelectedItem] = useState(null);
 
-  // Lock scroll when lightbox is open
   useEffect(() => {
-    if (selectedItem) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
+    document.body.style.overflow = selectedItem ? 'hidden' : '';
     return () => {
       document.body.style.overflow = '';
     };
   }, [selectedItem]);
 
-  if (items.length === 0) {
-    return (
-      <div className="grid grid-cols-1">
-        <EmptyState />
-      </div>
-    );
-  }
-
-  // Split into 3 columns for masonry feel
-  const col1 = items.filter((_, i) => i % 3 === 0);
-  const col2 = items.filter((_, i) => i % 3 === 1);
-  const col3 = items.filter((_, i) => i % 3 === 2);
-
-  const renderItem = (item, delay = 0) => (
-    <motion.div
-      key={item.id}
-      initial={{ opacity: 0, y: 24 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-40px' }}
-      transition={{ duration: 0.5, delay }}
-      className="w-full rounded-[2rem] overflow-hidden border-4 border-white shadow-lg bg-white/40 backdrop-blur-sm cursor-pointer relative group"
-      onClick={() => setSelectedItem(item)}
-    >
-      {item.type === 'video' ? (
-        <>
-          <ReviewVideo src={item.src} />
-          <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-            <div className="w-12 h-12 rounded-full bg-white/40 backdrop-blur-md flex items-center justify-center text-white shadow-lg">
-              <Play fill="currentColor" className="w-5 h-5 ml-1" />
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="overflow-hidden">
-          <img
-            src={item.src}
-            alt="Customer review"
-            className="w-full h-auto object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-            onError={(e) => console.error('[CustomerReviews] Image load error:', e, item.src)}
-          />
-        </div>
-      )}
-    </motion.div>
-  );
+  if (allItems.length === 0) return null;
 
   const navigateItem = (e, direction) => {
     e.stopPropagation();
-    const idx = items.findIndex(i => i.id === selectedItem.id);
+    const idx = allItems.findIndex((item) => item.id === selectedItem.id);
     let nextIdx = idx + direction;
-    if (nextIdx < 0) nextIdx = items.length - 1;
-    if (nextIdx >= items.length) nextIdx = 0;
-    setSelectedItem(items[nextIdx]);
+    if (nextIdx < 0) nextIdx = allItems.length - 1;
+    if (nextIdx >= allItems.length) nextIdx = 0;
+    setSelectedItem(allItems[nextIdx]);
   };
 
   return (
-    <div className="w-full">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-        <div className="flex flex-col gap-6">{col1.map((item) => renderItem(item, 0))}</div>
-        <div className="flex flex-col gap-6">{col2.map((item) => renderItem(item, 0.1))}</div>
-        <div className="flex flex-col gap-6">{col3.map((item) => renderItem(item, 0.2))}</div>
-      </div>
+    <div className="w-full space-y-10 overflow-hidden">
+      <ReviewRow label="Photo Reviews" items={imageItems} onSelect={setSelectedItem} />
+      <ReviewRow label="Video Reviews" items={videoItems} onSelect={setSelectedItem} delay={0.1} />
 
       <AnimatePresence>
         {selectedItem && (
@@ -185,25 +188,28 @@ export default function CustomerReviews() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
               className="relative z-10 w-full max-w-5xl max-h-full flex items-center justify-center"
             >
               <button
+                type="button"
                 onClick={() => setSelectedItem(null)}
                 className="absolute -top-12 right-0 sm:-right-12 sm:top-0 text-white/70 hover:text-white p-2 transition-colors z-20 hover:rotate-90 duration-300"
               >
                 <X className="w-8 h-8" />
               </button>
 
-              {items.length > 1 && (
+              {allItems.length > 1 && (
                 <>
                   <button
+                    type="button"
                     onClick={(e) => navigateItem(e, -1)}
                     className="absolute left-2 sm:-left-16 top-1/2 -translate-y-1/2 text-white/50 hover:text-white p-2 hover:bg-white/10 rounded-full transition-all z-20 backdrop-blur-md"
                   >
                     <ChevronLeft className="w-10 h-10" />
                   </button>
                   <button
+                    type="button"
                     onClick={(e) => navigateItem(e, 1)}
                     className="absolute right-2 sm:-right-16 top-1/2 -translate-y-1/2 text-white/50 hover:text-white p-2 hover:bg-white/10 rounded-full transition-all z-20 backdrop-blur-md"
                   >
@@ -212,8 +218,8 @@ export default function CustomerReviews() {
                 </>
               )}
 
-              <div 
-                className="relative rounded-[2rem] overflow-hidden shadow-2xl bg-black border border-white/10 cursor-default" 
+              <div
+                className="relative rounded-[2rem] overflow-hidden shadow-2xl bg-black border border-white/10 cursor-default"
                 onClick={(e) => e.stopPropagation()}
               >
                 {selectedItem.type === 'video' ? (
@@ -227,7 +233,7 @@ export default function CustomerReviews() {
                 ) : (
                   <img
                     src={selectedItem.src}
-                    alt="Customer Review Full"
+                    alt=""
                     className="max-h-[85vh] w-auto max-w-full object-contain rounded-[2rem]"
                   />
                 )}

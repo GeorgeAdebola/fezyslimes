@@ -83,23 +83,79 @@ function Layout() {
     }
   };
 
+  const adjustCartForActivator = (currentCart) => {
+    const slimeItems = currentCart.filter(item => item.id !== 'slime-activator');
+    const numSlimes = slimeItems.reduce((acc, item) => acc + item.quantity, 0);
+    const activatorIndex = currentCart.findIndex(item => item.id === 'slime-activator');
+
+    if (numSlimes >= 4) {
+      if (activatorIndex > -1) {
+        const activator = currentCart[activatorIndex];
+        if (!activator.isFree || activator.quantity !== 1) {
+          const updated = [...currentCart];
+          updated[activatorIndex] = {
+            ...activator,
+            price: 0,
+            name: 'FREE GIFT — Slime Activator',
+            isFree: true,
+            quantity: 1
+          };
+          return updated;
+        }
+      } else {
+        return [
+          ...currentCart,
+          {
+            id: 'slime-activator',
+            name: 'FREE GIFT — Slime Activator',
+            price: 0,
+            quantity: 1,
+            category: 'care',
+            image: 'https://images.unsplash.com/photo-1607613009820-a29f7bb81c04?auto=format&fit=crop&w=600&q=80',
+            isFree: true
+          }
+        ];
+      }
+    } else {
+      if (activatorIndex > -1) {
+        const activator = currentCart[activatorIndex];
+        if (activator.isFree) {
+          return currentCart.filter(item => item.id !== 'slime-activator');
+        }
+      }
+    }
+    return currentCart;
+  };
+
   const handleAddToCart = (product) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.id === product.id);
+      let nextCart;
       if (existing) {
-        return prev.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+        nextCart = prev.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+      } else {
+        nextCart = [...prev, { ...product, quantity: 1 }];
       }
-      return [...prev, { ...product, quantity: 1 }];
+      return adjustCartForActivator(nextCart);
     });
     setIsCartOpen(true);
   };
 
   const handleUpdateQuantity = (productId, newQty) => {
     if (newQty <= 0) return handleRemoveItem(productId);
-    setCart((prev) => prev.map((item) => (item.id === productId ? { ...item, quantity: newQty } : item)));
+    setCart((prev) => {
+      const nextCart = prev.map((item) => (item.id === productId ? { ...item, quantity: newQty } : item));
+      return adjustCartForActivator(nextCart);
+    });
   };
 
-  const handleRemoveItem = (productId) => setCart((prev) => prev.filter((item) => item.id !== productId));
+  const handleRemoveItem = (productId) => {
+    setCart((prev) => {
+      const nextCart = prev.filter((item) => item.id !== productId);
+      return adjustCartForActivator(nextCart);
+    });
+  };
+
   const handleClearCart = () => setCart([]);
   
   const toggleFavorite = async (productId) => {
@@ -174,6 +230,7 @@ function Layout() {
           onUpdateQuantity={handleUpdateQuantity}
           onRemoveItem={handleRemoveItem}
           onClearCart={handleClearCart}
+          onAddToCart={handleAddToCart}
         />
 
         <ProductQuickView 

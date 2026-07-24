@@ -2,39 +2,8 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, MapPin, Package, Truck, CheckCircle2, AlertCircle, Calendar, Clock } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
 import { getOrderByTrackingOrId, ORDER_STATUSES, getStatusIndex } from '../services/orderService';
 import toast from 'react-hot-toast';
-
-// Leaflet default icon fix
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
-
-const deliveryIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-pink.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
-
-// Component to dynamically adjust map view when position changes
-function MapAnimation({ currentPos }) {
-  const map = useMap();
-  useEffect(() => {
-    if (currentPos) {
-      map.flyTo(currentPos, 13, { duration: 1.5 });
-    }
-  }, [currentPos, map]);
-  return null;
-}
 
 export default function OrderTracking() {
   const [searchParams] = useSearchParams();
@@ -42,11 +11,6 @@ export default function OrderTracking() {
   const [isLoading, setIsLoading] = useState(false);
   const [order, setOrder] = useState(null);
   const [error, setError] = useState('');
-
-  // Coordinates for delivery simulation (Lagos, Nigeria)
-  const warehousePos = [6.5244, 3.3792]; // Lagos Mainland (HQ)
-  const hubPos = [6.4698, 3.5852]; // Lekki Hub
-  const customerPos = [6.4500, 3.6000]; // Target Customer Location
 
   // Extract query parameter if present on mount
   useEffect(() => {
@@ -83,18 +47,7 @@ export default function OrderTracking() {
     performTracking(trackingId);
   };
 
-  // Interpolate courier location based on 9 tracking stages
-  const getSimulatedCourierPosition = (statusIndex) => {
-    if (statusIndex <= 3) return warehousePos; // Confirmed, Preparing, Quality Check, Packaging
-    if (statusIndex === 4) return [6.5000, 3.4500]; // Handed to Courier
-    if (statusIndex === 5) return [6.4800, 3.5200]; // In Transit
-    if (statusIndex === 6) return hubPos; // Arrived at Local Hub
-    if (statusIndex === 7) return [6.4600, 3.5900]; // Out for Delivery
-    return customerPos; // Delivered
-  };
-
   const currentStatusIndex = order ? getStatusIndex(order.trackingStatus || order.orderStatus) : -1;
-  const courierPos = getSimulatedCourierPosition(currentStatusIndex);
 
   // Formatting dates
   const formatDate = (timestamp) => {
@@ -116,7 +69,7 @@ export default function OrderTracking() {
         {/* Search Header */}
         <div className="text-center max-w-2xl mx-auto mb-12 space-y-4">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyan-100 border border-cyan-200 text-cyan-600 text-xs font-bold uppercase tracking-wider">
-            Live Tracking Portal
+            Fulfillment Tracking Portal
           </div>
           <h1 className="text-4xl font-black text-slate-800">Track Your Slime Order</h1>
           <p className="text-slate-500 font-medium">Enter your unique Order ID or Tracking ID to check status.</p>
@@ -154,8 +107,8 @@ export default function OrderTracking() {
                   <p className="font-black text-slate-800 text-lg font-mono">{order.orderId}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 font-sans">Tracking ID</p>
-                  <p className="font-black text-cyan-500 text-lg font-mono">{order.trackingId}</p>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 font-sans">Tracking Number</p>
+                  <p className={`font-black text-lg font-mono ${order.trackingId ? 'text-cyan-500' : 'text-slate-400'}`}>{order.trackingId || 'Tracking number will be added once shipped'}</p>
                 </div>
                 <div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 font-sans">Customer</p>
@@ -213,7 +166,7 @@ export default function OrderTracking() {
                 </div>
               </div>
 
-              {/* Map & Stage Details */}
+              {/* Delivery Details Section */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 
                 {/* Details Card */}
@@ -234,7 +187,7 @@ export default function OrderTracking() {
                   
                   <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm">
                     <h3 className="text-lg font-black text-slate-800 mb-4 border-b border-slate-100 pb-2 flex items-center gap-2">
-                      <Calendar className="w-5 h-5 text-cyan-500" /> Delivery Timeframe
+                      <Calendar className="w-5 h-5 text-cyan-500" /> Fulfillment Summary
                     </h3>
                     <div className="space-y-3 font-medium text-sm text-slate-600">
                       <div className="flex justify-between">
@@ -245,61 +198,54 @@ export default function OrderTracking() {
                         <span>Time Updated:</span>
                         <span className="font-bold text-slate-800">{formatTime(order.updatedAt || order.createdAt)}</span>
                       </div>
-                      <div className="flex justify-between border-t border-slate-100 pt-3 text-slate-800 font-bold">
-                        <span>Estimated Arrival:</span>
-                        <span className="text-cyan-600 font-black">
-                          {order.shippingMethod === 'express' ? 'Next Day' : '3-5 Business Days'}
-                        </span>
+                      <div className="flex justify-between border-t border-slate-100 pt-3 text-slate-800">
+                        <span>Courier Choice:</span>
+                        <span className="font-black text-slate-800">{order.selectedCourier || 'DHL'}</span>
                       </div>
+                      <div className="flex justify-between">
+                        <span>Fulfillment Method:</span>
+                        <span className="text-cyan-600 font-black">Flat-Rate manual dispatch</span>
+                      </div>
+                      {order.deliveryFee !== undefined && (
+                        <div className="flex justify-between border-t border-slate-100 pt-3 text-slate-800 font-bold">
+                          <span>Delivery Fee Charged:</span>
+                          <span className="font-black">₦{order.deliveryFee.toLocaleString()}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Free Maps Leaflet Component */}
-                <div className="lg:col-span-2 bg-white/90 backdrop-blur-xl border border-white shadow-xl shadow-pink-100/50 rounded-[2.5rem] overflow-hidden flex flex-col h-[450px]">
-                  <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white">
-                    <div>
-                      <h3 className="text-base font-black text-slate-800">Free Live Route Mapping</h3>
-                      <p className="text-xs font-bold text-slate-400">OpenStreetMap & Leaflet.js rendering</p>
+                {/* Items & Shipping Info */}
+                <div className="lg:col-span-2 bg-white border border-slate-200 shadow-sm rounded-[2rem] p-6 lg:p-8 flex flex-col space-y-6">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-800 mb-4 border-b border-slate-100 pb-2 flex items-center gap-2">
+                      <Package className="w-5 h-5 text-cyan-500" /> Items in Order
+                    </h3>
+                    <div className="space-y-4">
+                      {order.items && order.items.map((item) => (
+                        <div key={item.id} className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                          <div className="flex items-center gap-3">
+                            {item.image && (
+                              <img src={item.image} alt={item.name} className="w-12 h-12 object-cover rounded-xl border border-slate-200" />
+                            )}
+                            <div>
+                              <p className="font-bold text-slate-800 text-sm">{item.name}</p>
+                              <p className="text-xs text-slate-400 font-medium">Quantity: {item.quantity}</p>
+                            </div>
+                          </div>
+                          <span className="font-black text-slate-800 text-sm">₦{(item.price * item.quantity).toLocaleString()}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  
-                  <div className="flex-1 relative bg-slate-100 z-0">
-                    <MapContainer 
-                      center={warehousePos} 
-                      zoom={12} 
-                      style={{ height: '100%', width: '100%' }}
-                      zoomControl={false}
-                    >
-                      <TileLayer
-                        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                        attribution='&copy; OpenStreetMap'
-                      />
-                      
-                      <Marker position={warehousePos}>
-                        <Popup>FezySlimes HQ Warehouse</Popup>
-                      </Marker>
-                      
-                      <Marker position={customerPos}>
-                        <Popup>Customer Delivery Point</Popup>
-                      </Marker>
 
-                      {currentStatusIndex >= 2 && (
-                        <Marker position={courierPos} icon={deliveryIcon}>
-                          <Popup>FezySlimes Courier</Popup>
-                        </Marker>
-                      )}
-
-                      <Polyline 
-                        positions={[warehousePos, hubPos, customerPos]} 
-                        color="#22d3ee" 
-                        weight={4} 
-                        dashArray="6, 6" 
-                        opacity={0.7}
-                      />
-
-                      <MapAnimation currentPos={courierPos} />
-                    </MapContainer>
+                  <div className="bg-gradient-to-br from-cyan-50/50 to-pink-50/50 border border-slate-100 rounded-2xl p-6 space-y-3">
+                    <h4 className="text-sm font-black text-slate-800">Fulfillment Information</h4>
+                    <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                      Your package will be delivered via <strong>{order.selectedCourier || 'DHL'}</strong>. 
+                      Once dispatch is confirmed, the courier tracking number will be updated here. If you have any inquiries, feel free to contact our support with your Order ID.
+                    </p>
                   </div>
                 </div>
 

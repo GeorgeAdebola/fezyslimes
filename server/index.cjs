@@ -24,6 +24,7 @@ const {
   runTransaction, 
   serverTimestamp 
 } = require('firebase/firestore');
+const shippingService = require('./shippingService.cjs');
 // Local credentials live in the ignored .env.local file; deployed platforms
 // provide the same values through their environment.
 require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
@@ -262,7 +263,20 @@ const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 
 // Paystack payment verification endpoint (Feature 1)
 app.post('/api/verify-payment', async (req, res) => {
-  const { reference, customerName, email, phone, address, landmark, notes, total, items } = req.body;
+  const { 
+    reference, 
+    customerName, 
+    email, 
+    phone, 
+    address, 
+    landmark, 
+    notes, 
+    total, 
+    items,
+    selectedZone,
+    selectedCourier,
+    deliveryFee
+  } = req.body;
   if (!reference) {
     return res.status(400).json({ error: 'Transaction reference is required.' });
   }
@@ -291,11 +305,16 @@ app.post('/api/verify-payment', async (req, res) => {
       }
 
       const generatedOrderId = 'FS-' + new Date().getFullYear() + '-' + Math.floor(100000 + Math.random() * 900000);
-      const generatedTrackingId = 'TRK-FS-' + Math.floor(100000 + Math.random() * 900000);
+
+      // Book via modular shipping interface (returns null/empty tracking initially)
+      const shipment = await shippingService.createShipment(selectedCourier, {
+        orderId: generatedOrderId,
+        customer: { name: customerName, address }
+      });
 
       const newOrder = {
         orderId: generatedOrderId,
-        trackingId: generatedTrackingId,
+        trackingId: shipment.trackingId || null,
         customer: {
           name: customerName,
           email: email.toLowerCase(),
@@ -304,11 +323,14 @@ app.post('/api/verify-payment', async (req, res) => {
           landmark: landmark || '',
           notes: notes || ''
         },
+        selectedZone: selectedZone || null,
+        selectedCourier: selectedCourier || null,
+        deliveryFee: deliveryFee !== undefined ? parseFloat(deliveryFee) : 0,
         amount: total,
         paymentReference: reference,
         paymentStatus: 'Paid',
-        trackingStatus: 'Order Placed',
-        deliveryStatus: 'Order Placed',
+        trackingStatus: 'Processing',
+        deliveryStatus: 'Processing',
         confirmed: false, // will require post-payment confirmation via OTP (Feature 2B)
         items,
         createdAt: serverTimestamp(),
@@ -316,7 +338,7 @@ app.post('/api/verify-payment', async (req, res) => {
       };
 
       transaction.set(orderDocRef, newOrder);
-      return { orderId: generatedOrderId, trackingId: generatedTrackingId };
+      return { orderId: generatedOrderId, trackingId: shipment.trackingId || null };
     });
 
     // Send post-checkout Order Confirmation OTP (Feature 2B)
@@ -372,11 +394,10 @@ app.post('/api/paystack-webhook', async (req, res) => {
         if (docSnapshot.exists()) return;
 
         const generatedOrderId = metadata.orderId || `FS-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-        const generatedTrackingId = metadata.trackingId || `TRK-FS-${Math.floor(100000 + Math.random() * 900000)}`;
 
         const newOrder = {
           orderId: generatedOrderId,
-          trackingId: generatedTrackingId,
+          trackingId: null, // Initial trackingId is null for manual fulfillment
           customer: {
             name: metadata.customerName || data.customer.first_name + ' ' + data.customer.last_name,
             email: data.customer.email.toLowerCase(),
@@ -385,11 +406,14 @@ app.post('/api/paystack-webhook', async (req, res) => {
             landmark: metadata.landmark || '',
             notes: metadata.notes || ''
           },
+          selectedZone: metadata.selectedZone || null,
+          selectedCourier: metadata.selectedCourier || null,
+          deliveryFee: metadata.deliveryFee !== undefined ? parseFloat(metadata.deliveryFee) : 0,
           amount: data.amount / 100,
           paymentReference: paystackReference,
           paymentStatus: 'Paid',
-          trackingStatus: 'Order Placed',
-          deliveryStatus: 'Order Placed',
+          trackingStatus: 'Processing',
+          deliveryStatus: 'Processing',
           confirmed: false,
           items: metadata.items || [],
           createdAt: serverTimestamp(),
@@ -528,7 +552,7 @@ app.post('/api/otp/confirm-order', async (req, res) => {
           <h2 style="color: #10b981; text-align: center;">Order Confirmed! 💖</h2>
           <p>Thank you for choosing FezySlimes. Your order is confirmed and is now being processed.</p>
           <h3>Order Details:</h3>
-          <p><b>Order ID:</b> ${orderData.orderId}<br/><b>Tracking ID:</b> ${orderData.trackingId}<br/><b>Payment Reference:</b> ${reference}</p>
+          <p><b>Order ID:</b> ${orderData.orderId}<br/><b>Tracking ID:</b> ${orderData.trackingId || 'Awaiting shipment (will be added once shipped)'}<br/><b>Payment Reference:</b> ${reference}</p>
           <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
             <thead>
               <tr style="background-color: #f8fafc;">
@@ -830,12 +854,13 @@ app.get('/api/admin/orders', verifyAdminToken, async (req, res) => {
 app.put('/api/admin/orders/:id/status', verifyAdminToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { trackingStatus, deliveryStatus } = req.body;
+    const { trackingStatus, deliveryStatus, trackingId } = req.body;
     const orderRef = doc(db, 'orders', id);
     
     await updateDoc(orderRef, {
       trackingStatus,
       deliveryStatus,
+      trackingId: trackingId !== undefined ? trackingId : null,
       updatedAt: serverTimestamp()
     });
     
@@ -924,6 +949,19 @@ const initialProducts = [
     rating: 4.7,
     reviewsCount: 24,
     stock: 20
+  },
+  {
+    id: 'slime-activator',
+    name: 'Slime Activator (Borax Spray)',
+    price: 1500,
+    category: 'care',
+    texture: 'Liquid',
+    scent: 'Unscented',
+    description: 'Compulsory for slime maintenance. Reactivates sticky or melted slimes back to their perfect texture.',
+    image: 'https://images.unsplash.com/photo-1607613009820-a29f7bb81c04?auto=format&fit=crop&w=600&q=80',
+    rating: 5.0,
+    reviewsCount: 150,
+    stock: 500
   }
 ];
 
@@ -943,8 +981,58 @@ async function seedProductsIfNeeded() {
   }
 }
 
+const defaultShippingRates = {
+  "Lagos-Uber": 3000,
+  "Lagos-Gokada": 2500,
+  "Ogun-DHL": 3500,
+  "Oyo-DHL": 3500,
+  "Abuja-DHL": 5000,
+  "PH-DHL": 4500
+};
+
+async function seedShippingRatesIfNeeded() {
+  try {
+    const ratesDocRef = doc(db, 'settings', 'shipping_rates');
+    const snapshot = await getDoc(ratesDocRef);
+    if (!snapshot.exists()) {
+      console.log('[Seed] Shipping rates document is empty. Seeding initial rates...');
+      await setDoc(ratesDocRef, defaultShippingRates);
+      console.log('[Seed] Shipping rates seeding completed.');
+    }
+  } catch (error) {
+    console.error('[Seed] Error seeding shipping rates:', error);
+  }
+}
+
+// GET all shipping rates (Public)
+app.get('/api/shipping-rates', async (req, res) => {
+  try {
+    const ratesDocRef = doc(db, 'settings', 'shipping_rates');
+    const snapshot = await getDoc(ratesDocRef);
+    if (snapshot.exists()) {
+      return res.status(200).json(snapshot.data());
+    } else {
+      return res.status(200).json(defaultShippingRates);
+    }
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch shipping rates' });
+  }
+});
+
+// PUT update shipping rates (Admin)
+app.put('/api/admin/shipping-rates', verifyAdminToken, async (req, res) => {
+  try {
+    const ratesDocRef = doc(db, 'settings', 'shipping_rates');
+    await setDoc(ratesDocRef, req.body);
+    return res.status(200).json({ success: true, message: 'Shipping rates updated successfully' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to update shipping rates' });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, async () => {
   console.log(`FezySlimes Secure Payment Backend running on port ${PORT}`);
   await seedProductsIfNeeded();
+  await seedShippingRatesIfNeeded();
 });

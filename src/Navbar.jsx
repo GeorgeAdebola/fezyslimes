@@ -45,8 +45,24 @@ export default function Navbar({ cartCount, onCartClick, activeSection, scrollTo
 
   return (
     <>
+      {/* Top Scrolling Announcement Banner */}
+      <div className="w-full bg-cyan-500 text-white overflow-hidden py-2 text-xs font-black tracking-wider uppercase fixed top-0 left-0 z-50 shadow-sm flex items-center h-9">
+        <div className="animate-marquee flex gap-8 whitespace-nowrap">
+          <div className="flex shrink-0 items-center gap-8 pr-8">
+            <span>✨ Shop open every Saturday 3pm</span>
+            <span>🚀 Fast delivery</span>
+            <span>💖 Slime activator is compulsory with every order — free when you buy 4 or more slimes!</span>
+          </div>
+          <div className="flex shrink-0 items-center gap-8 pr-8" aria-hidden="true">
+            <span>✨ Shop open every Saturday 3pm</span>
+            <span>🚀 Fast delivery</span>
+            <span>💖 Slime activator is compulsory with every order — free when you buy 4 or more slimes!</span>
+          </div>
+        </div>
+      </div>
+
       <nav
-        className={`fixed top-0 left-0 w-full z-45 transition-all duration-500 ${
+        className={`fixed top-9 left-0 w-full z-45 transition-all duration-500 ${
           isScrolled || !isHome
             ? 'bg-white/90 border-b border-slate-100 shadow-md shadow-pink-100/30 backdrop-blur-xl py-3'
             : 'bg-transparent py-5'

@@ -4,10 +4,7 @@ import {
   Sparkles, 
   Flame, 
   HelpCircle, 
-  Star, 
   Check, 
-  ChevronLeft, 
-  ChevronRight, 
   MessageSquare, 
   Mail, 
   MapPin, 
@@ -19,7 +16,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
-import { categories, reviews, shippingLocations } from '../data';
+import { categories, shippingLocations } from '../data';
 import CustomerReviews from '../components/CustomerReviews';
 import { fetchProducts } from '../services/productService';
 import toast from 'react-hot-toast';
@@ -36,10 +33,7 @@ export default function Home() {
     handleAddToCart, 
     setSelectedProduct, 
     toggleFavorite, 
-    favorites,
-    activeReviewIndex,
-    prevReview,
-    nextReview
+    favorites
   } = useOutletContext();
 
   // Fetch products from the shared Firestore backend (same source as Admin)
@@ -80,7 +74,7 @@ export default function Home() {
   return (
     <div className="flex flex-col">
       {/* Hero Section */}
-      <section id="home" className="relative min-h-screen flex items-center justify-center pt-24 pb-16 overflow-hidden">
+      <section id="home" className="relative min-h-screen flex items-center justify-center pt-32 pb-16 overflow-hidden">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center w-full">
           <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-6 text-left relative z-10">
             <motion.div variants={fadeUp} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white shadow-sm text-cyan-600 text-xs font-bold uppercase tracking-wider">
@@ -188,6 +182,17 @@ export default function Home() {
                 {cat.title.replace(' Slimes', '')}
               </button>
             ))}
+          </motion.div>
+
+          {/* Activator Promo Strip */}
+          <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} className="mb-10 bg-gradient-to-r from-pink-50 via-white to-cyan-50 border border-pink-100 rounded-2xl p-4 sm:p-6 shadow-sm flex flex-col sm:flex-row items-center justify-center text-center sm:text-left gap-4">
+            <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm shrink-0 border border-pink-100">
+              <span className="text-2xl">💖</span>
+            </div>
+            <div>
+              <h4 className="text-slate-800 font-black text-lg">Don't forget your activator!</h4>
+              <p className="text-slate-600 font-medium text-sm">A slime activator is required with every order — <span className="text-pink-500 font-bold">orders of 4+ slimes get one FREE!</span></p>
+            </div>
           </motion.div>
 
           {/* Product Grid — Loading / Error / Data states */}
@@ -380,35 +385,8 @@ export default function Home() {
       {/* Reviews */}
       <section id="reviews" className="py-24 relative">
         <div className="max-w-4xl mx-auto px-6 relative z-10">
-          <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} className="text-center mb-16 space-y-4">
+          <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} className="text-center mb-12">
             <h2 className="text-3xl sm:text-5xl font-black text-slate-800">Customer Reviews</h2>
-            <p className="text-base text-slate-500 font-medium">What slime collectors are saying about FezySlimes</p>
-          </motion.div>
-
-          <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} className="bg-white/70 backdrop-blur-xl border border-white rounded-[3rem] p-8 sm:p-12 shadow-2xl shadow-pink-100/60 relative text-left space-y-8">
-            <div className="flex items-center gap-1 text-pink-400">
-              {[...Array(reviews[activeReviewIndex].rating)].map((_, i) => (
-                <Star key={i} className="w-6 h-6 fill-current drop-shadow-sm" />
-              ))}
-            </div>
-
-            <blockquote className="text-xl sm:text-2xl text-slate-700 font-bold leading-relaxed">
-              &ldquo;{reviews[activeReviewIndex].text}&rdquo;
-            </blockquote>
-
-            <div className="flex items-center justify-between border-t border-slate-100 pt-8">
-              <div className="flex items-center gap-4">
-                <img src={reviews[activeReviewIndex].avatar} alt={reviews[activeReviewIndex].name} className="w-14 h-14 rounded-full object-cover border-2 border-white shadow-md" />
-                <div>
-                  <h4 className="font-black text-slate-800 text-lg">{reviews[activeReviewIndex].name}</h4>
-                  <span className="text-sm font-bold text-cyan-500">{reviews[activeReviewIndex].role}</span>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button onClick={prevReview} className="p-3 bg-white border border-slate-100 shadow-sm hover:shadow-md hover:border-cyan-200 text-slate-500 hover:text-cyan-500 rounded-2xl transition-all active:scale-95"><ChevronLeft className="w-6 h-6" /></button>
-                <button onClick={nextReview} className="p-3 bg-white border border-slate-100 shadow-sm hover:shadow-md hover:border-cyan-200 text-slate-500 hover:text-cyan-500 rounded-2xl transition-all active:scale-95"><ChevronRight className="w-6 h-6" /></button>
-              </div>
-            </div>
           </motion.div>
 
           {/* Real customer photo & video gallery */}
@@ -417,7 +395,7 @@ export default function Home() {
             whileInView="visible"
             viewport={{ once: true, margin: "-40px" }}
             variants={fadeUp}
-            className="mt-16"
+            className="mt-10"
           >
             <CustomerReviews />
           </motion.div>
