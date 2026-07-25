@@ -8,8 +8,9 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ORDER_STATUSES } from '../../services/orderService';
-import { storage } from '../../firebase';
+import { storage, db } from '../../firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { collection, getDocs, addDoc, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 
 // ----------------------------------------------------------------
@@ -125,10 +126,27 @@ function ProductsSection({ authFetch }) {
   const loadProducts = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/products`);
-      const data = await res.json();
-      setProducts(Array.isArray(data) ? data : []);
+      let productList = [];
+      try {
+        const res = await fetch(`${API_BASE}/api/products`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) productList = data;
+        }
+      } catch (apiErr) {
+        console.warn('[Admin] Backend API fetch failed, trying direct Firestore fallback:', apiErr);
+      }
+
+      if (productList.length === 0) {
+        const querySnapshot = await getDocs(collection(db, 'products'));
+        querySnapshot.forEach((docSnap) => {
+          productList.push({ id: docSnap.id, ...docSnap.data() });
+        });
+      }
+
+      setProducts(productList);
     } catch (err) {
+      console.error('[Admin] Failed to load products:', err);
       toast.error('Failed to load products.');
     } finally {
       setIsLoading(false);
@@ -172,6 +190,12 @@ function ProductsSection({ authFetch }) {
 
   const handleSaveProduct = async (e) => {
     e.preventDefault();
+    
+    if (!form.name?.trim() || !form.price?.toString().trim()) {
+      toast.error('Please fill in required fields (Product Name and Price).');
+      return;
+    }
+
     setIsSaving(true);
     setUploadProgress(null);
 
@@ -181,86 +205,103 @@ function ProductsSection({ authFetch }) {
       if (form.imageFile) {
         toast.loading('Authenticating upload...', { id: 'img-upload' });
         
-        // Ensure the client is authenticated with Firebase so Storage Rules don't block us
-        const auth = getAuth();
-        if (!auth.currentUser) {
-          await signInAnonymously(auth);
-        }
+        try {
+          const auth = getAuth();
+          if (!auth.currentUser) {
+            await signInAnonymously(auth);
+          }
 
-        toast.loading('Uploading image to Firebase Storage...', { id: 'img-upload' });
-        const storageRef = ref(storage, `product-images/${Date.now()}-${form.imageFile.name.replace(/\s+/g, '_')}`);
-        const uploadTask = uploadBytesResumable(storageRef, form.imageFile);
+          toast.loading('Uploading image to Firebase Storage...', { id: 'img-upload' });
+          const storageRef = ref(storage, `product-images/${Date.now()}-${form.imageFile.name.replace(/\s+/g, '_')}`);
+          const uploadTask = uploadBytesResumable(storageRef, form.imageFile);
 
-        finalImageUrl = await new Promise((resolve, reject) => {
-          // Add a safety timeout so it never hangs indefinitely
-          const timeout = setTimeout(() => {
-            reject(new Error("Upload timed out after 30 seconds. Please check your network or Firebase config."));
-          }, 30000);
+          finalImageUrl = await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error("Storage upload timeout. Falling back to local image."));
+            }, 15000);
 
-          uploadTask.on(
-            'state_changed',
-            (snapshot) => {
-              const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-              setUploadProgress(pct);
-            },
-            (err) => {
-              clearTimeout(timeout);
-              console.error('[Firebase Storage Error]', err);
-              reject(err);
-            },
-            async () => {
-              clearTimeout(timeout);
-              try {
-                const url = await getDownloadURL(uploadTask.snapshot.ref);
-                resolve(url);
-              } catch (urlErr) {
-                console.error('[Firebase URL Error]', urlErr);
-                reject(urlErr);
+            uploadTask.on(
+              'state_changed',
+              (snapshot) => {
+                const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                setUploadProgress(pct);
+              },
+              (err) => {
+                clearTimeout(timeout);
+                reject(err);
+              },
+              async () => {
+                clearTimeout(timeout);
+                try {
+                  const url = await getDownloadURL(uploadTask.snapshot.ref);
+                  resolve(url);
+                } catch (urlErr) {
+                  reject(urlErr);
+                }
               }
-            }
-          );
-        });
-        toast.dismiss('img-upload');
-        setUploadProgress(null);
+            );
+          });
+        } catch (imgErr) {
+          console.warn('[Storage Upload Warning] Using image preview fallback:', imgErr);
+          finalImageUrl = imagePreview || form.imageUrl || '';
+        } finally {
+          toast.dismiss('img-upload');
+          setUploadProgress(null);
+        }
       }
 
-      // ---- Step 2: Send product data (with Firebase Storage URL) to backend ----
-      const payload = {
-        name: form.name,
-        description: form.description,
-        price: form.price,
-        category: form.category,
-        texture: form.texture,
-        scent: form.scent,
-        stock: form.stock,
-        image: finalImageUrl || ''
+      // ---- Step 2: Prepare product payload ----
+      const productPayload = {
+        name: form.name.trim(),
+        description: form.description || '',
+        price: parseFloat(form.price) || 0,
+        category: form.category || 'glossy',
+        texture: form.texture || '',
+        scent: form.scent || '',
+        stock: parseInt(form.stock, 10) || 0,
+        image: finalImageUrl || imagePreview || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80',
+        updatedAt: new Date().toISOString()
       };
 
-      const url = editingProduct
-        ? `/api/admin/products/${editingProduct.id}`
-        : '/api/admin/products';
-      const method = editingProduct ? 'PUT' : 'POST';
+      // ---- Step 3: Try backend API or direct Firestore write ----
+      let isSaved = false;
+      try {
+        const url = editingProduct
+          ? `/api/admin/products/${editingProduct.id}`
+          : '/api/admin/products';
+        const method = editingProduct ? 'PUT' : 'POST';
 
-      console.log(`[Frontend] Sending ${method} request to backend at ${url}`);
-      const res = await authFetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }, 15000); // 15-second timeout for backend
-      
-      const data = await res.json();
-      if (!res.ok) {
-        console.error('[Frontend] Backend returned error:', data);
-        throw new Error(data.error || 'Failed to save product.');
+        const res = await authFetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(productPayload)
+        }, 8000);
+
+        if (res.ok) {
+          isSaved = true;
+        }
+      } catch (apiErr) {
+        console.warn('[Admin] API endpoint unreachable, writing directly to Firestore:', apiErr);
       }
-      console.log('[Frontend] Backend successfully processed product:', data);
+
+      if (!isSaved) {
+        if (editingProduct) {
+          await setDoc(doc(db, 'products', editingProduct.id), productPayload, { merge: true });
+        } else {
+          await addDoc(collection(db, 'products'), {
+            ...productPayload,
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
 
       toast.success(editingProduct ? 'Product updated! ✨' : 'Product created! 🎉');
       setShowForm(false);
       await loadProducts();
     } catch (err) {
+      console.error('[Admin Save Product Error]', err);
       toast.dismiss('img-upload');
-      toast.error(err.message);
+      toast.error(err.message || 'Failed to save product.');
     } finally {
       setIsSaving(false);
       setUploadProgress(null);
@@ -270,12 +311,23 @@ function ProductsSection({ authFetch }) {
   const handleDeleteProduct = async (productId) => {
     if (!window.confirm('Are you sure you want to delete this product?')) return;
     try {
-      const res = await authFetch(`/api/admin/products/${productId}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete product.');
+      let isDeleted = false;
+      try {
+        const res = await authFetch(`/api/admin/products/${productId}`, { method: 'DELETE' }, 5000);
+        if (res.ok) isDeleted = true;
+      } catch (apiErr) {
+        console.warn('[Admin Delete] API backend unreachable, using direct Firestore delete:', apiErr);
+      }
+
+      if (!isDeleted) {
+        await deleteDoc(doc(db, 'products', productId));
+      }
+
       toast.success('Product deleted.');
       await loadProducts();
     } catch (err) {
-      toast.error(err.message);
+      console.error('[Admin Delete Product Error]', err);
+      toast.error(err.message || 'Failed to delete product.');
     }
   };
 

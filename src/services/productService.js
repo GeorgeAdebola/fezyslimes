@@ -1,25 +1,34 @@
-/**
- * productService.js
- * 
- * Single source of truth for all product-related API calls on the frontend.
- * Both the storefront (Home, QuickView, Cart) and the Admin panel fetch from
- * the same Express + Firestore backend via these helpers.
- * 
- * The API base URL is injected via VITE_API_BASE so it works in:
- *   - Local dev   → http://localhost:5000  (set in .env.local)
- *   - Production  → https://your-backend.railway.app  (set in Vercel env vars)
- */
+import { db } from '../firebase';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 
 export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
 
 /**
- * Fetch all products from Firestore (via the backend).
+ * Fetch all products from Firestore (via backend API or direct Firestore fallback).
  * @returns {Promise<Array>} Array of product objects
  */
 export const fetchProducts = async () => {
-  const res = await fetch(`${API_BASE}/api/products`);
-  if (!res.ok) throw new Error('Failed to fetch products. Is the server running?');
-  return res.json();
+  try {
+    const res = await fetch(`${API_BASE}/api/products`);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('[productService] Backend API fetch failed, trying direct Firestore fallback:', err);
+  }
+
+  // Direct Firestore fallback
+  try {
+    const querySnapshot = await getDocs(collection(db, 'products'));
+    const products = [];
+    querySnapshot.forEach((docSnap) => {
+      products.push({ id: docSnap.id, ...docSnap.data() });
+    });
+    return products;
+  } catch (firestoreErr) {
+    console.error('[productService] Firestore fallback failed:', firestoreErr);
+    throw new Error('Failed to load products.');
+  }
 };
 
 /**
@@ -28,7 +37,20 @@ export const fetchProducts = async () => {
  * @returns {Promise<Object>} Product object
  */
 export const fetchProductById = async (id) => {
-  const res = await fetch(`${API_BASE}/api/products/${id}`);
-  if (!res.ok) throw new Error('Product not found.');
-  return res.json();
+  try {
+    const res = await fetch(`${API_BASE}/api/products/${id}`);
+    if (res.ok) return await res.json();
+  } catch (err) {
+    console.warn('[productService] Backend fetch by ID failed, trying direct Firestore fallback:', err);
+  }
+
+  try {
+    const docSnap = await getDoc(doc(db, 'products', id));
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() };
+    }
+  } catch (firestoreErr) {
+    console.error('[productService] Firestore getDoc failed:', firestoreErr);
+  }
+  throw new Error('Product not found.');
 };
