@@ -368,7 +368,7 @@ export default function Home() {
                 <Flame className="w-7 h-7" />
               </div>
               <h3 className="text-xl font-black text-slate-800">Tips &amp; Maintenance</h3>
-              <p className="text-sm text-cyan-600 font-bold">With proper care, slimes last between 3–5 weeks!</p>
+              <p className="text-sm text-cyan-600 font-bold">With proper care, slimes last between 3–5 months!</p>
               <ul className="space-y-3 text-sm text-slate-700 font-medium list-disc pl-4 marker:text-cyan-400">
                 <li>Wash hands before playing.</li>
                 <li>Play on clean surfaces only.</li>
