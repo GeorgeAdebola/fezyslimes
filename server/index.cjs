@@ -9,21 +9,7 @@ const multer = require('multer');
 const nodemailer = require('nodemailer');
 const { initializeApp: initializeAdminApp, cert } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
-const { initializeApp } = require('firebase/app');
-const { 
-  getFirestore, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  getDocs, 
-  updateDoc, 
-  deleteDoc, 
-  collection, 
-  query, 
-  where, 
-  runTransaction, 
-  serverTimestamp 
-} = require('firebase/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const shippingService = require('./shippingService.cjs');
 // Local credentials live in the ignored .env.local file; deployed platforms
 // provide the same values through their environment.
@@ -58,19 +44,8 @@ try {
 }
 
 const adminAuth = getAuth();
-
-// Public Firebase config used to initialize the client SDK on the backend
-const firebaseConfig = {
-  apiKey: "AIzaSyB8Uarm1Wfr9gfCGhohvSBNpT3zBpzAyYQ",
-  authDomain: "slime-business.firebaseapp.com",
-  projectId: "slime-business",
-  storageBucket: "slime-business.appspot.com",
-  messagingSenderId: "1056410131791",
-  appId: "1:1056410131791:web:dbee93e059d2900d10b93a"
-};
-
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
+const db = getFirestore();
+db.settings({ ignoreUndefinedProperties: true });
 
 const app = express();
 
@@ -197,8 +172,8 @@ function generateOTP() {
 }
 
 async function saveOTP(email, code, type) {
-  const otpRef = doc(db, 'otps', `${email.toLowerCase()}_${type}`);
-  await setDoc(otpRef, {
+  const otpRef = db.collection('otps').doc(`${email.toLowerCase()}_${type}`);
+  await otpRef.set({
     email: email.toLowerCase(),
     code,
     type,
@@ -209,10 +184,10 @@ async function saveOTP(email, code, type) {
 }
 
 async function verifyOTP(email, code, type) {
-  const otpRef = doc(db, 'otps', `${email.toLowerCase()}_${type}`);
-  const otpSnap = await getDoc(otpRef);
+  const otpRef = db.collection('otps').doc(`${email.toLowerCase()}_${type}`);
+  const otpSnap = await otpRef.get();
   
-  if (!otpSnap.exists()) {
+  if (!otpSnap.exists) {
     return { success: false, message: 'No OTP code requested.' };
   }
   
@@ -230,7 +205,7 @@ async function verifyOTP(email, code, type) {
     return { success: false, message: 'Incorrect OTP code.' };
   }
   
-  await updateDoc(otpRef, { verified: true });
+  await otpRef.update({ verified: true });
   return { success: true };
 }
 
@@ -296,8 +271,8 @@ app.post('/api/verify-payment', async (req, res) => {
       return res.status(400).json({ error: 'Payment amount mismatch.' });
     }
 
-    const orderDocRef = doc(db, 'orders', reference);
-    const result = await runTransaction(db, async (transaction) => {
+    const orderDocRef = db.collection('orders').doc(reference);
+    const result = await db.runTransaction(async (transaction) => {
       const docSnapshot = await transaction.get(orderDocRef);
       if (docSnapshot.exists()) {
         const existingData = docSnapshot.data();
@@ -333,8 +308,8 @@ app.post('/api/verify-payment', async (req, res) => {
         deliveryStatus: 'Processing',
         confirmed: false, // will require post-payment confirmation via OTP (Feature 2B)
         items,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
       };
 
       transaction.set(orderDocRef, newOrder);
@@ -387,9 +362,9 @@ app.post('/api/paystack-webhook', async (req, res) => {
       const data = event.data;
       const paystackReference = data.reference;
       const metadata = data.metadata || {};
-      const orderDocRef = doc(db, 'orders', paystackReference);
+      const orderDocRef = db.collection('orders').doc(paystackReference);
 
-      await runTransaction(db, async (transaction) => {
+      await db.runTransaction(async (transaction) => {
         const docSnapshot = await transaction.get(orderDocRef);
         if (docSnapshot.exists()) return;
 
@@ -416,8 +391,8 @@ app.post('/api/paystack-webhook', async (req, res) => {
           deliveryStatus: 'Processing',
           confirmed: false,
           items: metadata.items || [],
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp()
         };
 
         transaction.set(orderDocRef, newOrder);
@@ -468,11 +443,11 @@ app.post('/api/otp/verify-signup', async (req, res) => {
     }
 
     // Update isVerified flag in Firestore users collection
-    const userQuery = query(collection(db, 'users'), where('email', '==', email.toLowerCase()));
-    const querySnapshot = await getDocs(userQuery);
+    const userQuery = db.collection('users').where('email', '==', email.toLowerCase());
+    const querySnapshot = await userQuery.get();
     if (!querySnapshot.empty) {
       const userDocRef = querySnapshot.docs[0].ref;
-      await updateDoc(userDocRef, { isVerified: true });
+      await userDocRef.update({ isVerified: true });
     }
 
     return res.status(200).json({ success: true, message: 'Account successfully verified!' });
@@ -523,15 +498,15 @@ app.post('/api/otp/confirm-order', async (req, res) => {
     }
     
     // Update order confirmed status in Firestore
-    const orderDocRef = doc(db, 'orders', reference);
-    const orderSnap = await getDoc(orderDocRef);
+    const orderDocRef = db.collection('orders').doc(reference);
+    const orderSnap = await orderDocRef.get();
     if (!orderSnap.exists()) {
       return res.status(404).json({ error: 'Order not found.' });
     }
     
-    await updateDoc(orderDocRef, {
+    await orderDocRef.update({
       confirmed: true,
-      updatedAt: serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     });
     
     const orderData = orderSnap.data();
@@ -589,14 +564,12 @@ app.post('/api/otp/send-login', async (req, res) => {
   try {
     // Rate Limiting: Max 3 requests per 10 mins
     const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
-    const otpsRef = collection(db, 'otps');
-    const q = query(
-      otpsRef, 
-      where('email', '==', email.toLowerCase()), 
-      where('type', '==', 'login'),
-      where('createdAt', '>', tenMinsAgo)
-    );
-    const snap = await getDocs(q);
+    const otpsRef = db.collection('otps');
+    const q = otpsRef
+      .where('email', '==', email.toLowerCase())
+      .where('type', '==', 'login')
+      .where('createdAt', '>', tenMinsAgo);
+    const snap = await q.get();
     
     if (snap.size >= 3) {
       return res.status(429).json({ error: 'Too many login attempts. Please wait 10 minutes.' });
@@ -664,12 +637,12 @@ app.post('/api/subscribe', async (req, res) => {
   if (!email) return res.status(400).json({ error: 'Email is required.' });
   
   try {
-    const subRef = doc(db, 'subscribers', email.toLowerCase());
-    const snap = await getDoc(subRef);
+    const subRef = db.collection('subscribers').doc(email.toLowerCase());
+    const snap = await subRef.get();
     if (!snap.exists()) {
-      await setDoc(subRef, {
+      await subRef.set({
         email: email.toLowerCase(),
-        subscribedAt: serverTimestamp()
+        subscribedAt: FieldValue.serverTimestamp()
       });
     }
     return res.status(200).json({ success: true, message: 'Successfully subscribed to the newsletter!' });
@@ -693,8 +666,8 @@ app.post('/api/admin/login', (req, res) => {
 // Admin Product CRUD and Public Get
 app.get('/api/products', async (req, res) => {
   try {
-    const productsRef = collection(db, 'products');
-    const snap = await getDocs(productsRef);
+    const productsRef = db.collection('products');
+    const snap = await productsRef.get();
     const list = [];
     snap.forEach(doc => {
       list.push({ id: doc.id, ...doc.data() });
@@ -708,8 +681,8 @@ app.get('/api/products', async (req, res) => {
 // Single product by ID (used by storefront quick-view / detail pages)
 app.get('/api/products/:id', async (req, res) => {
   try {
-    const prodRef = doc(db, 'products', req.params.id);
-    const snap = await getDoc(prodRef);
+    const prodRef = db.collection('products').doc(req.params.id);
+    const snap = await prodRef.get();
     if (!snap.exists()) return res.status(404).json({ error: 'Product not found' });
     return res.status(200).json({ id: snap.id, ...snap.data() });
   } catch (err) {
@@ -738,13 +711,13 @@ app.post('/api/admin/products', verifyAdminToken, async (req, res) => {
     const { name, description, price, category, texture, scent, stock, image } = req.body;
     console.log(`[Backend] Parsed payload for product: ${name}`);
 
-    const productsRef = collection(db, 'products');
-    const newId = doc(productsRef).id;
+    const productsRef = db.collection('products');
+    const newId = productsRef.doc().id;
 
     const newProduct = {
       id: newId,
       name,
-      description,
+      description: description || '',
       price: parseFloat(price),
       category,
       texture: texture || '',
@@ -760,7 +733,7 @@ app.post('/api/admin/products', verifyAdminToken, async (req, res) => {
     console.log(`[Backend] Attempting to write document to Firestore with ID: ${newId}...`);
     // Wrapped in a timeout so it never hangs silently if Firestore network is down
     await withTimeout(
-      setDoc(doc(productsRef, newId), newProduct),
+      productsRef.doc(newId).set(newProduct),
       10000, 
       "Firestore setDoc timed out after 10 seconds. Check Firebase projectId and network connectivity."
     );
@@ -779,9 +752,9 @@ app.put('/api/admin/products/:id', verifyAdminToken, async (req, res) => {
     const { id } = req.params;
     const { name, description, price, category, texture, scent, stock, image } = req.body;
 
-    const prodRef = doc(db, 'products', id);
-    const snap = await getDoc(prodRef);
-    if (!snap.exists()) return res.status(404).json({ error: 'Product not found' });
+    const prodRef = db.collection('products').doc(id);
+    const snap = await prodRef.get();
+    if (!snap.exists) return res.status(404).json({ error: 'Product not found' });
 
     const updates = {
       name,
@@ -796,7 +769,7 @@ app.put('/api/admin/products/:id', verifyAdminToken, async (req, res) => {
     // Only overwrite image if a new URL was provided
     if (image) updates.image = image;
 
-    await updateDoc(prodRef, updates);
+    await prodRef.update(updates);
     return res.status(200).json({ success: true, message: 'Product updated successfully' });
   } catch (err) {
     console.error('[Update Product]', err);
@@ -807,7 +780,7 @@ app.put('/api/admin/products/:id', verifyAdminToken, async (req, res) => {
 app.delete('/api/admin/products/:id', verifyAdminToken, async (req, res) => {
   try {
     const { id } = req.params;
-    await deleteDoc(doc(db, 'products', id));
+    await db.collection('products').doc(id).delete();
     return res.status(200).json({ success: true, message: 'Product deleted' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to delete product' });
@@ -817,9 +790,9 @@ app.delete('/api/admin/products/:id', verifyAdminToken, async (req, res) => {
 // Customer: Get orders by email (Feature 4 - Order History)
 app.get('/api/orders/my-orders', verifyCustomerToken, async (req, res) => {
   try {
-    const ordersRef = collection(db, 'orders');
-    const q = query(ordersRef, where('customer.email', '==', req.customer.email));
-    const snap = await getDocs(q);
+    const ordersRef = db.collection('orders');
+    const q = ordersRef.where('customer.email', '==', req.customer.email);
+    const snap = await q.get();
     const list = [];
     snap.forEach(doc => {
       list.push({ id: doc.id, ...doc.data() });
@@ -840,7 +813,7 @@ app.get('/api/orders/my-orders', verifyCustomerToken, async (req, res) => {
 // Admin Orders view and status update
 app.get('/api/admin/orders', verifyAdminToken, async (req, res) => {
   try {
-    const snap = await getDocs(collection(db, 'orders'));
+    const snap = await db.collection('orders').get();
     const list = [];
     snap.forEach(doc => {
       list.push({ id: doc.id, ...doc.data() });
@@ -855,13 +828,13 @@ app.put('/api/admin/orders/:id/status', verifyAdminToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { trackingStatus, deliveryStatus, trackingId } = req.body;
-    const orderRef = doc(db, 'orders', id);
+    const orderRef = db.collection('orders').doc(id);
     
-    await updateDoc(orderRef, {
+    await orderRef.update({
       trackingStatus,
       deliveryStatus,
       trackingId: trackingId !== undefined ? trackingId : null,
-      updatedAt: serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     });
     
     return res.status(200).json({ success: true, message: 'Order status updated' });
@@ -967,12 +940,12 @@ const initialProducts = [
 
 async function seedProductsIfNeeded() {
   try {
-    const productsRef = collection(db, 'products');
-    const snapshot = await getDocs(productsRef);
+    const productsRef = db.collection('products');
+    const snapshot = await productsRef.get();
     if (snapshot.empty) {
       console.log('[Seed] Products collection is empty. Seeding initial products...');
       for (const prod of initialProducts) {
-        await setDoc(doc(productsRef, prod.id), prod);
+        await productsRef.doc(prod.id).set(prod);
       }
       console.log('[Seed] Seeding completed.');
     }
@@ -992,11 +965,11 @@ const defaultShippingRates = {
 
 async function seedShippingRatesIfNeeded() {
   try {
-    const ratesDocRef = doc(db, 'settings', 'shipping_rates');
-    const snapshot = await getDoc(ratesDocRef);
-    if (!snapshot.exists()) {
+    const ratesDocRef = db.collection('settings').doc('shipping_rates');
+    const snapshot = await ratesDocRef.get();
+    if (!snapshot.exists) {
       console.log('[Seed] Shipping rates document is empty. Seeding initial rates...');
-      await setDoc(ratesDocRef, defaultShippingRates);
+      await ratesDocRef.set(defaultShippingRates);
       console.log('[Seed] Shipping rates seeding completed.');
     }
   } catch (error) {
@@ -1007,8 +980,8 @@ async function seedShippingRatesIfNeeded() {
 // GET all shipping rates (Public)
 app.get('/api/shipping-rates', async (req, res) => {
   try {
-    const ratesDocRef = doc(db, 'settings', 'shipping_rates');
-    const snapshot = await getDoc(ratesDocRef);
+    const ratesDocRef = db.collection('settings').doc('shipping_rates');
+    const snapshot = await ratesDocRef.get();
     if (snapshot.exists()) {
       return res.status(200).json(snapshot.data());
     } else {
@@ -1022,13 +995,161 @@ app.get('/api/shipping-rates', async (req, res) => {
 // PUT update shipping rates (Admin)
 app.put('/api/admin/shipping-rates', verifyAdminToken, async (req, res) => {
   try {
-    const ratesDocRef = doc(db, 'settings', 'shipping_rates');
-    await setDoc(ratesDocRef, req.body);
+    const ratesDocRef = db.collection('settings').doc('shipping_rates');
+    await ratesDocRef.set(req.body);
     return res.status(200).json({ success: true, message: 'Shipping rates updated successfully' });
   } catch (err) {
     return res.status(500).json({ error: 'Failed to update shipping rates' });
   }
 });
+
+
+// --- NEW SECURE ENDPOINTS FOR FRONTEND ---
+
+app.get('/api/users/profile', verifyCustomerToken, async (req, res) => {
+  try {
+    const docSnap = await db.collection('users').doc(req.customer.uid).get();
+    if (docSnap.exists) {
+      return res.status(200).json(docSnap.data());
+    }
+    return res.status(200).json({
+      displayName: '',
+      phoneNumber: '',
+      notifications: { orderUpdates: true, promotions: false }
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+app.put('/api/users/profile', verifyCustomerToken, async (req, res) => {
+  try {
+    await db.collection('users').doc(req.customer.uid).set(req.body, { merge: true });
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+app.get('/api/users/wishlist', verifyCustomerToken, async (req, res) => {
+  try {
+    const docSnap = await db.collection('wishlists').doc(req.customer.uid).get();
+    if (docSnap.exists) {
+      return res.status(200).json(docSnap.data().items || []);
+    }
+    return res.status(200).json([]);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch wishlist' });
+  }
+});
+
+app.put('/api/users/wishlist', verifyCustomerToken, async (req, res) => {
+  try {
+    await db.collection('wishlists').doc(req.customer.uid).set({ items: req.body }, { merge: true });
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to update wishlist' });
+  }
+});
+
+app.get('/api/users/addresses', verifyCustomerToken, async (req, res) => {
+  try {
+    const snap = await db.collection('users').doc(req.customer.uid).collection('addresses').get();
+    const addresses = [];
+    snap.forEach((doc) => addresses.push({ id: doc.id, ...doc.data() }));
+    return res.status(200).json(addresses);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch addresses' });
+  }
+});
+
+app.post('/api/users/addresses', verifyCustomerToken, async (req, res) => {
+  try {
+    const address = req.body;
+    const colRef = db.collection('users').doc(req.customer.uid).collection('addresses');
+    const addressId = address.id || colRef.doc().id;
+    const finalAddress = { ...address, id: addressId, isDefault: address.isDefault || false };
+    
+    if (finalAddress.isDefault) {
+      const snap = await colRef.get();
+      const batch = db.batch();
+      snap.forEach((doc) => {
+        if (doc.data().isDefault) batch.update(doc.ref, { isDefault: false });
+      });
+      await batch.commit();
+    }
+    
+    await colRef.doc(addressId).set(finalAddress, { merge: true });
+    return res.status(200).json({ success: true, id: addressId });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to save address' });
+  }
+});
+
+app.put('/api/users/addresses/:id/default', verifyCustomerToken, async (req, res) => {
+  try {
+    const colRef = db.collection('users').doc(req.customer.uid).collection('addresses');
+    const snap = await colRef.get();
+    const batch = db.batch();
+    snap.forEach((doc) => {
+      if (doc.data().isDefault) batch.update(doc.ref, { isDefault: false });
+    });
+    await batch.commit();
+    
+    await colRef.doc(req.params.id).update({ isDefault: true });
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to set default address' });
+  }
+});
+
+app.delete('/api/users/addresses/:id', verifyCustomerToken, async (req, res) => {
+  try {
+    await db.collection('users').doc(req.customer.uid).collection('addresses').doc(req.params.id).delete();
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to delete address' });
+  }
+});
+
+app.get('/api/orders/search/:id', async (req, res) => {
+  try {
+    const searchId = req.params.id.trim().toUpperCase();
+    const ordersRef = db.collection('orders');
+    
+    const trackingSnap = await ordersRef.where("trackingId", "==", searchId).get();
+    if (!trackingSnap.empty) {
+      return res.status(200).json({ id: trackingSnap.docs[0].id, ...trackingSnap.docs[0].data() });
+    }
+    
+    const orderSnap = await ordersRef.where("orderId", "==", searchId).get();
+    if (!orderSnap.empty) {
+      return res.status(200).json({ id: orderSnap.docs[0].id, ...orderSnap.docs[0].data() });
+    }
+    
+    return res.status(200).json(null);
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to search order' });
+  }
+});
+
+app.post('/api/auth/google-login', verifyCustomerToken, async (req, res) => {
+  try {
+    const userDocRef = db.collection('users').doc(req.customer.uid);
+    const userDoc = await userDocRef.get();
+    if (!userDoc.exists) {
+      await userDocRef.set({
+        email: req.customer.email,
+        isVerified: true,
+        createdAt: new Date()
+      });
+    }
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to sync Google user' });
+  }
+});
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, async () => {

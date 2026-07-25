@@ -6,9 +6,6 @@ import { Eye, EyeOff, Lock, Mail, ArrowRight, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE } from '../services/productService';
 
-import { db } from '../firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -41,11 +38,14 @@ export default function Login() {
     try {
       const userCredential = await login(email, password);
       const user = userCredential.user;
+      const token = await user.getIdToken();
       
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userDocRef);
+      const profileRes = await fetch(`${API_BASE}/api/users/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const profileData = await profileRes.json();
       
-      if (userDoc.exists() && userDoc.data().isVerified === false) {
+      if (profileData && profileData.isVerified === false) {
         await fetch(`${API_BASE}/api/otp/send-signup`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -112,17 +112,8 @@ export default function Login() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Invalid OTP');
       
-      const userCredential = await loginWithCustomToken(data.customToken);
-      const user = userCredential.user;
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userDocRef);
-      if (!userDoc.exists()) {
-        await setDoc(userDocRef, {
-          email: email.toLowerCase(),
-          isVerified: true,
-          createdAt: new Date()
-        });
-      }
+      await loginWithCustomToken(data.customToken);
+      
       toast.success('Logged in successfully! ✨');
       navigate(from, { replace: true });
       
@@ -138,16 +129,13 @@ export default function Login() {
     try {
       const userCredential = await loginWithGoogle();
       const user = userCredential.user;
+      const token = await user.getIdToken();
       
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userDocRef);
-      if (!userDoc.exists()) {
-        await setDoc(userDocRef, {
-          email: user.email.toLowerCase(),
-          isVerified: true,
-          createdAt: new Date()
-        });
-      }
+      // Hit backend API to ensure user document is created/synced safely
+      await fetch(`${API_BASE}/api/auth/google-login`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
       
       toast.success('Logged in successfully with Google! ✨');
       navigate(from, { replace: true });
@@ -184,14 +172,14 @@ export default function Login() {
           <button 
             type="button"
             onClick={() => setLoginMethod('otp')}
-            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${loginMethod === 'otp' ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            className={\`flex-1 py-2 text-sm font-bold rounded-lg transition-all \${loginMethod === 'otp' ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}\`}
           >
             Email Code
           </button>
           <button 
             type="button"
             onClick={() => setLoginMethod('password')}
-            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${loginMethod === 'password' ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            className={\`flex-1 py-2 text-sm font-bold rounded-lg transition-all \${loginMethod === 'password' ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}\`}
           >
             Password
           </button>
