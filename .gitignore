@@ -23,6 +23,7 @@ dist-ssr
 !package-lock.json
 !tsconfig.json
 !.oxlintrc.json
+!vercel.json
 
 
 # Editor directories and files
