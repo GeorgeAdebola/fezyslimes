@@ -21,6 +21,8 @@ import CustomerReviews from '../components/CustomerReviews';
 import { fetchProducts } from '../services/productService';
 import toast from 'react-hot-toast';
 
+import productVideo from '../assets/5992522466562415265.mp4';
+
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -75,7 +77,7 @@ export default function Home() {
     <div className="flex flex-col">
       {/* Hero Section */}
       <section id="home" className="relative min-h-[85vh] flex items-center justify-center pt-28 pb-16 overflow-hidden">
-        <div className="max-w-4xl mx-auto px-6 w-full text-center relative z-10">
+        <div className="max-w-5xl mx-auto px-6 w-full text-center relative z-10">
           <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-6 flex flex-col items-center">
             <motion.div variants={fadeUp} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white shadow-sm text-cyan-600 text-xs font-bold uppercase tracking-wider">
               <Sparkles className="w-4 h-4 text-pink-400" /> Nigeria's Most Trusted Slime Brand
@@ -103,13 +105,39 @@ export default function Home() {
               </div>
             </motion.div>
 
-            <motion.div variants={fadeUp} className="flex flex-wrap justify-center gap-4 pt-4">
+            <motion.div variants={fadeUp} className="flex flex-wrap justify-center gap-4 pt-2">
               <button onClick={() => scrollToSection('shop')} className="px-8 py-4 bg-cyan-400 hover:bg-cyan-500 text-white font-black rounded-2xl shadow-lg shadow-cyan-200 transition-all hover:-translate-y-1 active:scale-95 text-base flex items-center gap-2">
                 Shop Now
               </button>
               <button onClick={() => scrollToSection('categories')} className="px-8 py-4 bg-white/80 hover:bg-white border border-white/60 text-slate-700 font-bold rounded-2xl shadow-md shadow-slate-200/50 transition-all hover:-translate-y-1 active:scale-95 text-base">
                 Explore Slimes
               </button>
+            </motion.div>
+
+            {/* Featured Product Showcase Video Card */}
+            <motion.div 
+              variants={fadeUp}
+              className="w-full max-w-2xl mt-6 relative rounded-[2.5rem] overflow-hidden border-4 border-white bg-white/70 shadow-2xl shadow-pink-100/60 group"
+            >
+              <video
+                src={productVideo}
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="metadata"
+                aria-label="FezySlimes handmade slime product showcase video"
+                className="w-full h-auto aspect-video sm:aspect-[16/9] object-cover rounded-[2.2rem]"
+              />
+              <div className="absolute bottom-4 left-4 right-4 bg-white/85 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/80 shadow-md flex items-center justify-between pointer-events-none">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
+                  <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Live ASMR Slime Texture</span>
+                </div>
+                <span className="text-[11px] font-bold text-pink-500 bg-pink-50 px-2.5 py-1 rounded-lg border border-pink-100">
+                  Handmade in Lagos ✨
+                </span>
+              </div>
             </motion.div>
           </motion.div>
         </div>
