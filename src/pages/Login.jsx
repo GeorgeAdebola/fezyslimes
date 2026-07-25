@@ -172,14 +172,14 @@ export default function Login() {
           <button 
             type="button"
             onClick={() => setLoginMethod('otp')}
-            className={\`flex-1 py-2 text-sm font-bold rounded-lg transition-all \${loginMethod === 'otp' ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}\`}
+            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${loginMethod === 'otp' ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
             Email Code
           </button>
           <button 
             type="button"
             onClick={() => setLoginMethod('password')}
-            className={\`flex-1 py-2 text-sm font-bold rounded-lg transition-all \${loginMethod === 'password' ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}\`}
+            className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${loginMethod === 'password' ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
             Password
           </button>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Sparkles, 
   Flame, 
@@ -13,7 +13,9 @@ import {
   Heart,
   Search,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Play,
+  X
 } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
 import { categories, shippingLocations } from '../data';
@@ -29,6 +31,15 @@ export default function Home() {
   const [products, setProducts] = useState([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState(null);
+  const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
+
+  // Prevent body scrolling when video lightbox is open
+  useEffect(() => {
+    document.body.style.overflow = isVideoModalOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isVideoModalOpen]);
 
   const { 
     scrollToSection, 
@@ -114,10 +125,15 @@ export default function Home() {
               </button>
             </motion.div>
 
-            {/* Featured Product Showcase Video Card */}
+            {/* Featured Product Showcase Video Card (Tappable Lightbox Trigger) */}
             <motion.div 
               variants={fadeUp}
-              className="w-full max-w-2xl mt-6 relative rounded-[2.5rem] overflow-hidden border-4 border-white bg-white/70 shadow-2xl shadow-pink-100/60 group"
+              onClick={() => setIsVideoModalOpen(true)}
+              className="w-full max-w-2xl mt-6 relative rounded-[2.5rem] overflow-hidden border-4 border-white bg-white/70 shadow-2xl shadow-pink-100/60 group cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] focus:outline-none focus:ring-4 focus:ring-cyan-300"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setIsVideoModalOpen(true)}
+              aria-label="Click to expand showcase video full screen"
             >
               <video
                 src={productVideo}
@@ -129,6 +145,17 @@ export default function Home() {
                 aria-label="FezySlimes handmade slime product showcase video"
                 className="w-full h-auto aspect-video sm:aspect-[16/9] object-cover rounded-[2.2rem]"
               />
+
+              {/* Play / Expand Cue Overlay */}
+              <div className="absolute inset-0 bg-slate-900/20 group-hover:bg-slate-900/35 transition-all flex items-center justify-center">
+                <div className="px-5 py-3 rounded-full bg-white/90 backdrop-blur-md shadow-xl border border-white text-slate-800 font-extrabold text-xs flex items-center gap-2.5 group-hover:scale-105 transition-transform">
+                  <div className="w-8 h-8 rounded-full bg-cyan-400 text-white flex items-center justify-center shadow-md">
+                    <Play fill="currentColor" className="w-4 h-4 ml-0.5" />
+                  </div>
+                  <span>Tap to view full screen 🔊</span>
+                </div>
+              </div>
+
               <div className="absolute bottom-4 left-4 right-4 bg-white/85 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/80 shadow-md flex items-center justify-between pointer-events-none">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
@@ -142,6 +169,55 @@ export default function Home() {
           </motion.div>
         </div>
       </section>
+
+      {/* Lightbox / Fullscreen Video Modal */}
+      <AnimatePresence>
+        {isVideoModalOpen && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 sm:p-8">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsVideoModalOpen(false)}
+              className="absolute inset-0 bg-slate-950/90 backdrop-blur-md cursor-pointer"
+            />
+
+            {/* Modal Content */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative z-10 w-full max-w-4xl max-h-[90vh] flex flex-col items-center justify-center"
+            >
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setIsVideoModalOpen(false)}
+                className="absolute -top-12 right-0 sm:-right-12 sm:top-0 text-white/80 hover:text-white p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full transition-all z-20 hover:rotate-90 duration-300"
+                aria-label="Close video lightbox"
+              >
+                <X className="w-7 h-7 text-white" />
+              </button>
+
+              {/* Video Wrapper */}
+              <div 
+                className="relative w-full rounded-[2rem] overflow-hidden shadow-2xl bg-black border border-white/20 cursor-default"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <video
+                  src={productVideo}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="w-full max-h-[80vh] object-contain rounded-[2rem]"
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Combined Shop & Textures Section */}
       <section id="shop" className="py-24 relative">
