@@ -1,7 +1,38 @@
 import { db } from '../firebase';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
+
+/**
+ * Realtime listener for Firestore products collection.
+ * Calls callback(productsArray) live whenever products are created, updated, or deleted.
+ * @param {Function} callback 
+ * @param {Function} onError 
+ * @returns {Function} Unsubscribe cleanup function
+ */
+export const subscribeProducts = (callback, onError) => {
+  try {
+    const unsubscribe = onSnapshot(
+      collection(db, 'products'),
+      (snapshot) => {
+        const products = [];
+        snapshot.forEach((docSnap) => {
+          products.push({ id: docSnap.id, ...docSnap.data() });
+        });
+        callback(products);
+      },
+      (error) => {
+        console.error('[productService] Realtime listener error:', error);
+        if (onError) onError(error);
+      }
+    );
+    return unsubscribe;
+  } catch (err) {
+    console.error('[productService] Failed to establish realtime listener:', err);
+    if (onError) onError(err);
+    return () => {};
+  }
+};
 
 /**
  * Fetch all products from Firestore (via backend API or direct Firestore fallback).

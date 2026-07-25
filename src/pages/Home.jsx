@@ -20,7 +20,7 @@ import {
 import { useOutletContext } from 'react-router-dom';
 import { categories, shippingLocations } from '../data';
 import CustomerReviews from '../components/CustomerReviews';
-import { fetchProducts } from '../services/productService';
+import { fetchProducts, subscribeProducts } from '../services/productService';
 import toast from 'react-hot-toast';
 
 import productVideo from '../assets/5992522466562415265.mp4';
@@ -49,7 +49,7 @@ export default function Home() {
     favorites
   } = useOutletContext();
 
-  // Fetch products from the shared Firestore backend (same source as Admin)
+  // Fetch products from the shared Firestore backend / direct Firestore
   const loadProducts = async () => {
     setIsLoadingProducts(true);
     setProductsError(null);
@@ -59,19 +59,41 @@ export default function Home() {
     } catch (err) {
       console.error('[Home] Failed to load products:', err);
       setProductsError('Could not load products. Please try again.');
-      toast.error('Could not load products.');
     } finally {
       setIsLoadingProducts(false);
     }
   };
 
   useEffect(() => {
+    setIsLoadingProducts(true);
+    
+    // Initial fetch fallback
     loadProducts();
+
+    // Subscribe to live Firestore product updates
+    const unsubscribe = subscribeProducts(
+      (liveProducts) => {
+        if (Array.isArray(liveProducts)) {
+          setProducts(liveProducts);
+          setProductsError(null);
+        }
+        setIsLoadingProducts(false);
+      },
+      (err) => {
+        console.warn('[Home] Realtime listener fallback to static fetch:', err);
+        setIsLoadingProducts(false);
+      }
+    );
+
+    return () => unsubscribe();
   }, []);
 
   const filteredProducts = products.filter(prod => {
     const matchesSearch = prod.name?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || prod.category === selectedCategory;
+    const matchesCategory = 
+      selectedCategory === 'all' || 
+      prod.category === selectedCategory ||
+      prod.category?.toLowerCase() === selectedCategory?.toLowerCase();
     return matchesSearch && matchesCategory;
   });
 
