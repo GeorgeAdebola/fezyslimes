@@ -118,9 +118,9 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // Admin configuration
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-const JWT_SECRET = process.env.JWT_SECRET;
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin@fezyslimes.com';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@12345';
+const JWT_SECRET = process.env.JWT_SECRET || 'fezyslimes-secret-jwt-key-2026';
 
 // JWT admin validation middleware
 function verifyAdminToken(req, res, next) {

@@ -1,12 +1,32 @@
 @import "tailwindcss";
 
+html, body {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+  width: 100%;
+}
+
 @layer utilities {
   .bg-glass {
     @apply bg-white/70 backdrop-blur-md border border-white/50 shadow-xl shadow-pink-100/50;
+    -webkit-backdrop-filter: blur(12px);
   }
   .bg-glass-card {
     @apply bg-white/80 backdrop-blur-sm border border-white/60 shadow-lg shadow-teal-100/40;
+    -webkit-backdrop-filter: blur(8px);
   }
+}
+
+/* iOS Safari backdrop-filter webkit support */
+.backdrop-blur-sm { -webkit-backdrop-filter: blur(4px); }
+.backdrop-blur-md { -webkit-backdrop-filter: blur(12px); }
+.backdrop-blur-lg { -webkit-backdrop-filter: blur(16px); }
+.backdrop-blur-xl { -webkit-backdrop-filter: blur(24px); }
+
+/* iOS Momentum Scrolling */
+.overflow-y-auto, .overflow-x-auto, .overflow-auto {
+  -webkit-overflow-scrolling: touch;
 }
 
 ::-webkit-scrollbar { width: 8px; }

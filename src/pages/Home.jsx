@@ -74,9 +74,9 @@ export default function Home() {
   return (
     <div className="flex flex-col">
       {/* Hero Section */}
-      <section id="home" className="relative min-h-screen flex items-center justify-center pt-32 pb-16 overflow-hidden">
-        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center w-full">
-          <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-6 text-left relative z-10">
+      <section id="home" className="relative min-h-[85vh] flex items-center justify-center pt-28 pb-16 overflow-hidden">
+        <div className="max-w-4xl mx-auto px-6 w-full text-center relative z-10">
+          <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-6 flex flex-col items-center">
             <motion.div variants={fadeUp} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white shadow-sm text-cyan-600 text-xs font-bold uppercase tracking-wider">
               <Sparkles className="w-4 h-4 text-pink-400" /> Nigeria's Most Trusted Slime Brand
             </motion.div>
@@ -89,21 +89,21 @@ export default function Home() {
               Slimes
             </motion.h1>
 
-            <motion.p variants={fadeUp} className="text-lg text-slate-600 max-w-xl leading-relaxed font-medium">
+            <motion.p variants={fadeUp} className="text-lg text-slate-600 max-w-2xl leading-relaxed font-medium">
               We aren't your average slime shop! We specialize in various slime textures made from imported ingredients. Our slimes are made for all ages <span className="inline-block align-middle leading-none select-none text-base mx-0.5">🤗</span>.
             </motion.p>
 
-            <motion.div variants={fadeUp} className="bg-white/60 backdrop-blur-md border border-white/60 shadow-lg shadow-pink-100/50 rounded-2xl p-4 flex items-center gap-4 max-w-md">
-              <div className="w-12 h-12 rounded-full bg-pink-100 flex items-center justify-center text-pink-500 font-black text-lg border border-white shadow-sm">
+            <motion.div variants={fadeUp} className="bg-white/60 backdrop-blur-md border border-white/60 shadow-lg shadow-pink-100/50 rounded-2xl p-4 flex items-center gap-4 max-w-md w-full justify-center">
+              <div className="w-12 h-12 rounded-full bg-pink-100 flex items-center justify-center text-pink-500 font-black text-lg border border-white shadow-sm shrink-0">
                 100+
               </div>
-              <div className="text-sm">
+              <div className="text-sm text-left">
                 <span className="font-bold text-slate-800 block">Orders Shipped Nationwide</span>
                 <span className="text-xs text-slate-500 font-medium">Handmade with love &amp; premium elements <span className="inline-block align-middle leading-none select-none text-sm text-pink-400 font-black mx-0.5">♡</span></span>
               </div>
             </motion.div>
 
-            <motion.div variants={fadeUp} className="flex flex-wrap gap-4 pt-4">
+            <motion.div variants={fadeUp} className="flex flex-wrap justify-center gap-4 pt-4">
               <button onClick={() => scrollToSection('shop')} className="px-8 py-4 bg-cyan-400 hover:bg-cyan-500 text-white font-black rounded-2xl shadow-lg shadow-cyan-200 transition-all hover:-translate-y-1 active:scale-95 text-base flex items-center gap-2">
                 Shop Now
               </button>
@@ -112,20 +112,6 @@ export default function Home() {
               </button>
             </motion.div>
           </motion.div>
-
-          {/* Hero Visual */}
-          <div className="relative flex justify-center items-center lg:justify-end">
-            <div className="relative w-[300px] h-[300px] sm:w-[450px] sm:h-[450px]">
-              <div className="absolute inset-0 bg-gradient-to-tr from-cyan-300/40 via-teal-200/40 to-pink-300/40 rounded-[40%_60%_70%_30%/40%_50%_60%_50%] shadow-2xl backdrop-blur-sm border-2 border-white/50 flex items-center justify-center">
-                <div className="relative z-10 text-center flex flex-col items-center">
-                  <span className="text-7xl sm:text-8xl select-none drop-shadow-xl">✨</span>
-                  <span className="mt-6 bg-white/90 backdrop-blur-md px-4 py-2 rounded-full text-xs font-black text-cyan-500 uppercase tracking-widest shadow-lg border border-white">
-                    Magical Textures
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 

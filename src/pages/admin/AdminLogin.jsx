@@ -29,7 +29,7 @@ export default function AdminLogin() {
         body: JSON.stringify({ username, password })
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data.error || 'Invalid admin credentials.');
       }
@@ -39,7 +39,11 @@ export default function AdminLogin() {
       navigate('/admin');
     } catch (err) {
       console.error(err);
-      toast.error(err.message);
+      const isNetworkErr = err.name === 'TypeError' || err.message?.includes('fetch');
+      const errMsg = isNetworkErr
+        ? 'Could not reach backend server. Please check your connection or backend server.'
+        : err.message;
+      toast.error(errMsg);
     } finally {
       setIsLoading(false);
     }
