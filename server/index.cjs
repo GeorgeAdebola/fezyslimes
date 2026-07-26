@@ -114,6 +114,15 @@ function verifyAdminToken(req, res, next) {
   });
 }
 
+// Admin: Upload image
+app.post('/api/admin/upload', verifyAdminToken, upload.single('image'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No image file provided' });
+  }
+  const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+  res.status(200).json({ url: imageUrl });
+});
+
 // Customer identity always comes from a verified Firebase ID token, never a
 // client-supplied email address.
 async function verifyCustomerToken(req, res, next) {
@@ -233,175 +242,152 @@ app.post('/api/verify-recaptcha', async (req, res) => {
   }
 });
 
-// Paystack Key configurations
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+// ---------------------------------------------------------------------------
+// BANK TRANSFER ORDER PLACEMENT (replaces Paystack)
+// ---------------------------------------------------------------------------
 
-// Paystack payment verification endpoint (Feature 1)
-app.post('/api/verify-payment', async (req, res) => {
-  const { 
-    reference, 
-    customerName, 
-    email, 
-    phone, 
-    address, 
-    landmark, 
-    notes, 
-    total, 
+// GET bank details (public — shown to customer on checkout)
+app.get('/api/bank-details', async (req, res) => {
+  try {
+    const docRef = db.collection('settings').doc('bank_details');
+    const snap = await docRef.get();
+    if (snap.exists()) {
+      return res.status(200).json(snap.data());
+    }
+    // Return empty defaults so frontend always gets a valid shape
+    return res.status(200).json({ bankName: '', accountNumber: '', accountName: '' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to fetch bank details.' });
+  }
+});
+
+// PUT bank details (admin only)
+app.put('/api/admin/settings/bank-details', verifyAdminToken, async (req, res) => {
+  const { bankName, accountNumber, accountName } = req.body;
+  if (!bankName || !accountNumber || !accountName) {
+    return res.status(400).json({ error: 'bankName, accountNumber, and accountName are all required.' });
+  }
+  try {
+    const docRef = db.collection('settings').doc('bank_details');
+    await docRef.set({ bankName, accountNumber, accountName });
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to update bank details.' });
+  }
+});
+
+// POST place-order — customer clicks "I've Made Payment"
+// Creates the order in Firestore with paymentStatus 'Awaiting Payment Confirmation'.
+app.post('/api/place-order', async (req, res) => {
+  const {
+    customerName,
+    email,
+    phone,
+    address,
+    landmark,
+    notes,
+    total,
     items,
     selectedZone,
     selectedCourier,
     deliveryFee
   } = req.body;
-  if (!reference) {
-    return res.status(400).json({ error: 'Transaction reference is required.' });
+
+  if (!customerName || !email || !total || !items || !items.length) {
+    return res.status(400).json({ error: 'customerName, email, total and items are required.' });
   }
+
   try {
-    const paystackResponse = await axios.get(
-      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
-      { headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` } }
-    );
-    const transactionData = paystackResponse.data.data;
-    
-    if (transactionData.status !== 'success') {
-      return res.status(400).json({ error: 'Paystack transaction was not successful.' });
-    }
-    
-    const expectedAmountKobo = Math.round(total * 100);
-    if (transactionData.amount !== expectedAmountKobo) {
-      return res.status(400).json({ error: 'Payment amount mismatch.' });
-    }
+    const generatedOrderId = 'FS-' + new Date().getFullYear() + '-' + Math.floor(100000 + Math.random() * 900000);
+    const orderDocRef = db.collection('orders').doc(generatedOrderId);
 
-    const orderDocRef = db.collection('orders').doc(reference);
-    const result = await db.runTransaction(async (transaction) => {
-      const docSnapshot = await transaction.get(orderDocRef);
-      if (docSnapshot.exists()) {
-        const existingData = docSnapshot.data();
-        return { orderId: existingData.orderId, trackingId: existingData.trackingId };
-      }
+    const newOrder = {
+      orderId: generatedOrderId,
+      trackingId: null,
+      customer: {
+        name: customerName,
+        email: email.toLowerCase(),
+        phone: phone || '',
+        address: address || '',
+        landmark: landmark || '',
+        notes: notes || ''
+      },
+      selectedZone: selectedZone || null,
+      selectedCourier: selectedCourier || null,
+      deliveryFee: deliveryFee !== undefined ? parseFloat(deliveryFee) : 0,
+      amount: parseFloat(total),
+      paymentStatus: 'Awaiting Payment Confirmation',
+      paymentMethod: 'Bank Transfer',
+      trackingStatus: 'Awaiting Payment Confirmation',
+      deliveryStatus: 'Awaiting Payment Confirmation',
+      confirmed: false,
+      items,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    };
 
-      const generatedOrderId = 'FS-' + new Date().getFullYear() + '-' + Math.floor(100000 + Math.random() * 900000);
+    await orderDocRef.set(newOrder);
 
-      // Book via modular shipping interface (returns null/empty tracking initially)
-      const shipment = await shippingService.createShipment(selectedCourier, {
-        orderId: generatedOrderId,
-        customer: { name: customerName, address }
-      });
-
-      const newOrder = {
-        orderId: generatedOrderId,
-        trackingId: shipment.trackingId || null,
-        customer: {
-          name: customerName,
-          email: email.toLowerCase(),
-          phone,
-          address,
-          landmark: landmark || '',
-          notes: notes || ''
-        },
-        selectedZone: selectedZone || null,
-        selectedCourier: selectedCourier || null,
-        deliveryFee: deliveryFee !== undefined ? parseFloat(deliveryFee) : 0,
-        amount: total,
-        paymentReference: reference,
-        paymentStatus: 'Paid',
-        trackingStatus: 'Processing',
-        deliveryStatus: 'Processing',
-        confirmed: false, // will require post-payment confirmation via OTP (Feature 2B)
-        items,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp()
-      };
-
-      transaction.set(orderDocRef, newOrder);
-      return { orderId: generatedOrderId, trackingId: shipment.trackingId || null };
-    });
-
-    // Send post-checkout Order Confirmation OTP (Feature 2B)
-    const confirmationOTP = generateOTP();
-    await saveOTP(email, confirmationOTP, 'order_' + reference);
+    // Notify customer by email
     await sendEmail({
       to: email,
-      subject: `Verify Your FezySlimes Order - Code: ${confirmationOTP}`,
+      subject: `FezySlimes Order Received — ${generatedOrderId}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
-          <h2 style="color: #06b6d4; text-align: center;">Confirm Your FezySlimes Order 🤍</h2>
-          <p>Thank you for your payment! To finalize and confirm your order (Order ID: <b>${result.orderId}</b>), please enter the following 6-digit OTP code on the order status confirmation screen:</p>
-          <div style="background-color: #f8fafc; padding: 15px; text-align: center; border-radius: 8px; font-size: 24px; font-weight: bold; letter-spacing: 4px; color: #ec4899; margin: 20px 0;">
-            ${confirmationOTP}
-          </div>
-          <p style="color: #64748b; font-size: 12px; text-align: center;">This code will expire in 10 minutes. If you do not verify, your order is still recorded as Paid, but confirming helps us track and package your order faster!</p>
+          <h2 style="color: #06b6d4; text-align: center;">Order Received! 🤍</h2>
+          <p>Hi <strong>${customerName}</strong>, we have received your order <strong>${generatedOrderId}</strong>.</p>
+          <p>Your payment is currently <strong>awaiting confirmation</strong>. Once we verify the transfer in our account, your order will be confirmed and processing will begin.</p>
+          <p style="color: #64748b; font-size: 12px;">You can track your order using Order ID: <strong>${generatedOrderId}</strong> at any time on our website.</p>
         </div>
       `
     });
 
-    return res.status(200).json({ 
-      success: true, 
-      orderId: result.orderId, 
-      trackingId: result.trackingId 
-    });
+    return res.status(201).json({ success: true, orderId: generatedOrderId });
   } catch (error) {
-    const errorDetails = error.response?.data?.message || error.message;
-    return res.status(500).json({ error: 'Backend payment verification failed.', details: errorDetails });
+    console.error('[Place Order] Error:', error);
+    return res.status(500).json({ error: 'Failed to place order.', details: error.message });
   }
 });
 
-// Paystack webhook listener
-app.post('/api/paystack-webhook', async (req, res) => {
+// Admin: Confirm payment received — marks order as paid and moves it to processing
+app.put('/api/admin/orders/:id/confirm-payment', verifyAdminToken, async (req, res) => {
   try {
-    const hash = crypto
-      .createHmac('sha512', PAYSTACK_SECRET_KEY)
-      .update(JSON.stringify(req.body))
-      .digest('hex');
+    const { id } = req.params;
+    const orderRef = db.collection('orders').doc(id);
+    const snap = await orderRef.get();
+    if (!snap.exists()) return res.status(404).json({ error: 'Order not found.' });
 
-    if (hash !== req.headers['x-paystack-signature']) {
-      return res.status(401).send('Unauthorized webhook signature.');
-    }
+    await orderRef.update({
+      paymentStatus: 'Paid',
+      trackingStatus: 'Order Confirmed',
+      deliveryStatus: 'Order Confirmed',
+      confirmed: true,
+      updatedAt: FieldValue.serverTimestamp()
+    });
 
-    const event = req.body;
-    if (event.event === 'charge.success') {
-      const data = event.data;
-      const paystackReference = data.reference;
-      const metadata = data.metadata || {};
-      const orderDocRef = db.collection('orders').doc(paystackReference);
+    const orderData = snap.data();
+    await sendEmail({
+      to: orderData.customer.email,
+      subject: `Payment Confirmed — FezySlimes Order ${orderData.orderId}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
+          <h2 style="color: #10b981; text-align: center;">Payment Confirmed! 💖</h2>
+          <p>Hi <strong>${orderData.customer.name}</strong>, we have confirmed your bank transfer for order <strong>${orderData.orderId}</strong>.</p>
+          <p>Your order is now <strong>confirmed and processing</strong>. We will update your tracking status as we prepare your slimes!</p>
+        </div>
+      `
+    });
 
-      await db.runTransaction(async (transaction) => {
-        const docSnapshot = await transaction.get(orderDocRef);
-        if (docSnapshot.exists()) return;
-
-        const generatedOrderId = metadata.orderId || `FS-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-
-        const newOrder = {
-          orderId: generatedOrderId,
-          trackingId: null, // Initial trackingId is null for manual fulfillment
-          customer: {
-            name: metadata.customerName || data.customer.first_name + ' ' + data.customer.last_name,
-            email: data.customer.email.toLowerCase(),
-            phone: data.customer.phone || metadata.phone || '',
-            address: metadata.address || 'No Address Provided',
-            landmark: metadata.landmark || '',
-            notes: metadata.notes || ''
-          },
-          selectedZone: metadata.selectedZone || null,
-          selectedCourier: metadata.selectedCourier || null,
-          deliveryFee: metadata.deliveryFee !== undefined ? parseFloat(metadata.deliveryFee) : 0,
-          amount: data.amount / 100,
-          paymentReference: paystackReference,
-          paymentStatus: 'Paid',
-          trackingStatus: 'Processing',
-          deliveryStatus: 'Processing',
-          confirmed: false,
-          items: metadata.items || [],
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp()
-        };
-
-        transaction.set(orderDocRef, newOrder);
-      });
-    }
-    res.status(200).send('Webhook processed');
-  } catch (error) {
-    res.status(500).send('Internal Webhook Error');
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('[Confirm Payment] Error:', err);
+    return res.status(500).json({ error: 'Failed to confirm payment.' });
   }
+});
+
+// Legacy stub — keep the old Paystack route alive so it doesn't cause hard 404 errors
+app.post('/api/verify-payment', (req, res) => {
+  return res.status(410).json({ error: 'Paystack integration has been removed. Orders now use manual bank transfer via /api/place-order.' });
 });
 
 // SIGNUP OTP Endpoints (Feature 2A)

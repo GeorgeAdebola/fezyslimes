@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Package, ShoppingBag, LogOut, Plus, Trash2, Edit2,
   X, Upload, CheckCircle2, AlertCircle, RefreshCw, Search, Filter,
-  TrendingUp, Users, DollarSign, Clock, Shield, ChevronDown, Image as ImageIcon, Truck
+  TrendingUp, Users, DollarSign, Clock, Shield, ChevronDown, Image as ImageIcon, Truck, Settings
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ORDER_STATUSES } from '../../services/orderService';
@@ -200,50 +200,28 @@ function ProductsSection({ authFetch }) {
     setUploadProgress(null);
 
     try {
-      // ---- Step 1: Upload image to Firebase Storage if a file was selected ----
+      // ---- Step 1: Upload image to backend if a file was selected ----
       let finalImageUrl = form.imageUrl;
       if (form.imageFile) {
-        toast.loading('Authenticating upload...', { id: 'img-upload' });
+        toast.loading('Uploading image to server...', { id: 'img-upload' });
+        
+        const formData = new FormData();
+        formData.append('image', form.imageFile);
         
         try {
-          const auth = getAuth();
-          if (!auth.currentUser) {
-            await signInAnonymously(auth);
-          }
-
-          toast.loading('Uploading image to Firebase Storage...', { id: 'img-upload' });
-          const storageRef = ref(storage, `product-images/${Date.now()}-${form.imageFile.name.replace(/\s+/g, '_')}`);
-          const uploadTask = uploadBytesResumable(storageRef, form.imageFile);
-
-          finalImageUrl = await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              reject(new Error("Storage upload timeout. Falling back to local image."));
-            }, 15000);
-
-            uploadTask.on(
-              'state_changed',
-              (snapshot) => {
-                const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-                setUploadProgress(pct);
-              },
-              (err) => {
-                clearTimeout(timeout);
-                reject(err);
-              },
-              async () => {
-                clearTimeout(timeout);
-                try {
-                  const url = await getDownloadURL(uploadTask.snapshot.ref);
-                  resolve(url);
-                } catch (urlErr) {
-                  reject(urlErr);
-                }
-              }
-            );
+          const uploadRes = await authFetch('/api/admin/upload', {
+            method: 'POST',
+            body: formData,
+            // don't set Content-Type header, let browser set it with boundary for FormData
           });
-        } catch (imgErr) {
-          console.warn('[Storage Upload Warning] Using image preview fallback:', imgErr);
-          finalImageUrl = imagePreview || form.imageUrl || '';
+          
+          if (!uploadRes.ok) throw new Error('Image upload failed');
+          
+          const uploadData = await uploadRes.json();
+          finalImageUrl = uploadData.url;
+        } catch (err) {
+          console.error('[Upload Error]', err);
+          throw new Error('Image upload failed. Please try again.');
         } finally {
           toast.dismiss('img-upload');
           setUploadProgress(null);
@@ -429,7 +407,7 @@ function ProductsSection({ authFetch }) {
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-2">
                   Product Image
-                  <span className="ml-2 text-cyan-500 font-normal normal-case">Uploaded to Firebase Storage</span>
+                  <span className="ml-2 text-cyan-500 font-normal normal-case">Uploaded to Server</span>
                 </label>
                 <div className="flex gap-4 items-start">
                   {imagePreview && (
@@ -449,7 +427,7 @@ function ProductsSection({ authFetch }) {
                           className="bg-cyan-400 h-2 rounded-full transition-all"
                           style={{ width: `${uploadProgress}%` }}
                         />
-                        <p className="text-[10px] text-slate-400 mt-1">{uploadProgress}% uploaded to Firebase Storage</p>
+                        <p className="text-[10px] text-slate-400 mt-1">{uploadProgress}% uploaded to server</p>
                       </div>
                     )}
 
@@ -577,6 +555,23 @@ function OrdersSection({ authFetch }) {
     }
   };
 
+  const handleConfirmPayment = async (orderId) => {
+    if (!window.confirm("Are you sure you want to mark this payment as confirmed?")) return;
+    setIsUpdating(true);
+    try {
+      const res = await authFetch(`/api/admin/orders/${orderId}/confirm-payment`, {
+        method: 'PUT'
+      });
+      if (!res.ok) throw new Error('Failed to confirm payment.');
+      toast.success('Payment confirmed successfully! ✅');
+      await loadOrders();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const formatDate = (timestamp) => {
     if (!timestamp) return 'N/A';
     const dateObj = timestamp.toDate ? timestamp.toDate() : new Date((timestamp.seconds || 0) * 1000);
@@ -652,12 +647,23 @@ function OrdersSection({ authFetch }) {
                   </td>
                   <td className="px-5 py-4 text-[11px] font-medium text-slate-500">{formatDate(order.createdAt)}</td>
                   <td className="px-5 py-4">
-                    <button
-                      onClick={() => { setSelectedOrder(order); setNewStatus(order.trackingStatus || ''); setTrackingId(order.trackingId || ''); }}
-                      className="px-3 py-1.5 bg-cyan-50 hover:bg-cyan-100 text-cyan-600 font-black rounded-lg text-[10px] transition-all"
-                    >
-                      Update Status
-                    </button>
+                    <div className="flex flex-col gap-2">
+                      {order.paymentStatus === 'Awaiting Payment Confirmation' && (
+                        <button
+                          onClick={() => handleConfirmPayment(order.id || order.orderId)}
+                          disabled={isUpdating}
+                          className="px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-600 font-black rounded-lg text-[10px] transition-all flex items-center justify-center gap-1 w-full"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Confirm Payment
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setSelectedOrder(order); setNewStatus(order.trackingStatus || ''); setTrackingId(order.trackingId || ''); }}
+                        className="px-3 py-1.5 bg-cyan-50 hover:bg-cyan-100 text-cyan-600 font-black rounded-lg text-[10px] transition-all w-full"
+                      >
+                        Update Status
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -909,6 +915,87 @@ function ShippingRatesSection({ authFetch }) {
   );
 }
 
+// ---- Settings Section ----
+function SettingsSection({ authFetch }) {
+  const [bankDetails, setBankDetails] = useState({ bankName: '', accountNumber: '', accountName: '' });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const loadBankDetails = async () => {
+      setIsLoading(true);
+      try {
+        const res = await fetch(`${API_BASE}/api/bank-details`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.bankName) setBankDetails(data);
+        }
+      } catch (err) {
+        toast.error('Failed to load bank details.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadBankDetails();
+  }, []);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      const res = await authFetch('/api/admin/settings/bank-details', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bankDetails)
+      });
+      if (!res.ok) throw new Error('Failed to update bank details.');
+      toast.success('Bank details updated successfully! 🏦');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-16">
+        <RefreshCw className="w-8 h-8 text-slate-300 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h2 className="text-2xl font-black text-slate-800">Store Settings</h2>
+        <p className="text-slate-500 text-sm font-medium">Configure bank account details for manual transfers</p>
+      </div>
+
+      <form onSubmit={handleSave} className="bg-white border border-slate-200 rounded-3xl p-6 space-y-6 shadow-sm">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">Bank Name</label>
+            <input required value={bankDetails.bankName} onChange={e => setBankDetails({...bankDetails, bankName: e.target.value})} placeholder="e.g. GTBank" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-cyan-400" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">Account Number</label>
+            <input required value={bankDetails.accountNumber} onChange={e => setBankDetails({...bankDetails, accountNumber: e.target.value})} placeholder="e.g. 0123456789" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-cyan-400" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">Account Name</label>
+            <input required value={bankDetails.accountName} onChange={e => setBankDetails({...bankDetails, accountName: e.target.value})} placeholder="e.g. Fezy Slimes Ltd" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-cyan-400" />
+          </div>
+        </div>
+
+        <button type="submit" disabled={isSaving} className="w-full py-3.5 bg-cyan-400 hover:bg-cyan-500 disabled:bg-slate-200 text-white font-black rounded-2xl shadow-lg shadow-cyan-200 transition-all active:scale-95 text-base flex items-center justify-center gap-2">
+          {isSaving ? 'Saving...' : 'Save Settings'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 // ---- Main Admin Dashboard ----
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -950,6 +1037,7 @@ export default function AdminDashboard() {
     { id: 'products', label: 'Products', icon: Package },
     { id: 'orders', label: 'Orders', icon: ShoppingBag },
     { id: 'shipping_rates', label: 'Shipping Rates', icon: Truck },
+    { id: 'settings', label: 'Store Settings', icon: Settings },
   ];
 
   if (!token) return null;
@@ -1031,6 +1119,7 @@ export default function AdminDashboard() {
             {activeTab === 'products' && <ProductsSection authFetch={authFetch} />}
             {activeTab === 'orders' && <OrdersSection authFetch={authFetch} />}
             {activeTab === 'shipping_rates' && <ShippingRatesSection authFetch={authFetch} />}
+            {activeTab === 'settings' && <SettingsSection authFetch={authFetch} />}
           </motion.div>
         </main>
       </div>

@@ -30,8 +30,10 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [createdOrderId, setCreatedOrderId] = useState('');
   const [createdTracking, setCreatedTracking] = useState('');
+  
+  const [bankDetails, setBankDetails] = useState({ bankName: '', accountName: '', accountNumber: '' });
 
-  // Fetch active shipping rates
+  // Fetch active shipping rates & bank details
   useEffect(() => {
     if (!isOpen) return;
     const fetchRates = async () => {
@@ -43,6 +45,15 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
         }
       } catch (err) {
         console.error("Error fetching shipping rates:", err);
+      }
+      
+      try {
+        const bankRes = await fetch(`${API_BASE}/api/bank-details`);
+        if (bankRes.ok) {
+          setBankDetails(await bankRes.json());
+        }
+      } catch (err) {
+        console.error("Error fetching bank details:", err);
       }
     };
     fetchRates();
@@ -138,114 +149,49 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
   
   const isPaymentAllowed = isDetailsValid && isShippingValid && cartItems.length > 0;
 
-  const handleCheckoutSubmit = (e) => {
+  const handleCheckoutSubmit = async (e) => {
     e.preventDefault();
     if (!isPaymentAllowed) return;
 
     setIsProcessingPayment(true);
     
-    // Ensure Paystack library is loaded
-    if (!window.PaystackPop) {
-      toast.error('Payment gateway is still loading. Please wait a moment.');
-      setIsProcessingPayment(false);
-      return;
-    }
-
-    const paystackPublicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
-    if (!paystackPublicKey) {
-      toast.error('Paystack Public Key is missing. Please configure it in your environment.');
-      setIsProcessingPayment(false);
-      return;
-    }
-
-    // Force check live mode key constraint if desired
-    if (paystackPublicKey.startsWith('pk_test')) {
-      console.warn("Using Paystack Test Key. Ensure this is replaced with Live Public Key in production.");
-    }
-
     try {
-      const paystack = new window.PaystackPop();
-      paystack.newTransaction({
-        key: paystackPublicKey,
-        email: email,
-        amount: total * 100, // amount in kobo
-        currency: 'NGN',
-        firstName: fullName.split(' ')[0] || '',
-        lastName: fullName.split(' ')[1] || '',
-        phone: phone,
-        metadata: {
-          custom_fields: [
-            {
-              display_name: "Customer Name",
-              variable_name: "customer_name",
-              value: fullName
-            },
-            {
-              display_name: "Phone Number",
-              variable_name: "phone_number",
-              value: phone
-            }
-          ],
-          selectedZone: selectedState,
-          selectedCourier: selectedState === 'Lagos' ? selectedCourier : 'DHL',
-          deliveryFee: shippingCost,
-          items: cartItems,
+      const response = await fetch(`${API_BASE}/api/place-order`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
           customerName: fullName,
+          email,
           phone,
           address: `${streetAddress}, ${city}, ${selectedState}`,
           landmark,
-          notes
-        },
-        onSuccess: async (transaction) => {
-          try {
-            const response = await fetch(`${API_BASE}/api/verify-payment`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                reference: transaction.reference,
-                customerName: fullName,
-                email,
-                phone,
-                address: `${streetAddress}, ${city}, ${selectedState}`,
-                landmark,
-                notes,
-                total,
-                items: cartItems,
-                selectedZone: selectedState,
-                selectedCourier: selectedState === 'Lagos' ? selectedCourier : 'DHL',
-                deliveryFee: shippingCost
-              })
-            });
-
-            const responseData = await response.json();
-            
-            if (!response.ok) {
-              throw new Error(responseData.error || 'Payment verification failed.');
-            }
-            
-            setCreatedOrderId(responseData.orderId);
-            setCreatedTracking(responseData.trackingId);
-            setIsProcessingPayment(false);
-            toast.success('Payment Verified! Order Confirmed ✨');
-            setCurrentStep(4);
-            onClearCart();
-          } catch (error) {
-            console.error("Order creation failed: ", error);
-            setIsProcessingPayment(false);
-            toast.error(error.message || 'Payment completed but verification failed.');
-          }
-        },
-        onCancel: () => {
-          setIsProcessingPayment(false);
-          toast.error('Payment cancelled.');
-        }
+          notes,
+          total,
+          items: cartItems,
+          selectedZone: selectedState,
+          selectedCourier: selectedState === 'Lagos' ? selectedCourier : 'DHL',
+          deliveryFee: shippingCost
+        })
       });
-    } catch (err) {
-      console.error("Paystack transaction initialization failed: ", err);
+
+      const responseData = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(responseData.error || 'Failed to place order.');
+      }
+      
+      setCreatedOrderId(responseData.orderId);
+      // For bank transfer, trackingId might be null initially
       setIsProcessingPayment(false);
-      toast.error('Could not initialize Paystack popup.');
+      toast.success('Order Placed Successfully! ✨');
+      setCurrentStep(4);
+      onClearCart();
+    } catch (error) {
+      console.error("Order creation failed: ", error);
+      setIsProcessingPayment(false);
+      toast.error(error.message || 'Failed to submit order.');
     }
   };
 
@@ -475,40 +421,38 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                     </div>
 
                     <div className="pt-4 flex flex-col gap-4">
-                      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3">
-                        <div className="flex items-center gap-2 text-sm font-black text-slate-800">
-                          <ShieldCheck className="w-5 h-5 text-cyan-500" /> Secure payment powered by Paystack
+                      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
+                        <div className="flex items-center gap-2 text-sm font-black text-slate-800 border-b border-slate-100 pb-3">
+                          <CreditCard className="w-5 h-5 text-cyan-500" /> Manual Bank Transfer
                         </div>
                         <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                          Your payment is encrypted and processed securely through Paystack. We do not store your card or bank details.
+                          Please transfer the exact amount of <strong>₦{total.toLocaleString()}</strong> to the account below, then click "I've Made Payment". Your order will be confirmed once payment is received.
                         </p>
-                        <div className="flex flex-wrap items-center gap-3 text-[10px] font-black text-slate-400 uppercase tracking-widest pt-3 border-t border-slate-100">
-                          <span>Visa</span> • <span>Mastercard</span> • <span>Verve</span> • <span>Transfer</span> • <span>USSD</span>
+                        <div className="bg-slate-50 border border-slate-100 rounded-lg p-4 space-y-2">
+                          <div className="flex justify-between">
+                            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Bank Name</span>
+                            <span className="text-sm font-black text-slate-800">{bankDetails.bankName || 'Loading...'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Account Number</span>
+                            <span className="text-sm font-black text-pink-500 tracking-wider">{bankDetails.accountNumber || 'Loading...'}</span>
+                          </div>
+                          <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
+                            <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Account Name</span>
+                            <span className="text-sm font-black text-slate-800">{bankDetails.accountName || 'Loading...'}</span>
+                          </div>
                         </div>
                       </div>
-                      {!window.PaystackPop && (
-                        <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col gap-2 text-left">
-                          <p className="text-xs font-bold text-amber-700 leading-relaxed">
-                            ⚠️ Payment gateway script is taking longer than expected to load.
-                          </p>
-                          <button 
-                            type="button"
-                            onClick={() => window.location.reload()}
-                            className="text-xs text-amber-950 font-black underline hover:text-amber-800 text-left w-fit"
-                          >
-                            Click here to refresh the page
-                          </button>
-                        </div>
-                      )}
+
                       <button 
                         type="submit" 
-                        disabled={isProcessingPayment || !isPaymentAllowed || !window.PaystackPop} 
+                        disabled={isProcessingPayment || !isPaymentAllowed} 
                         className="w-full py-4 bg-cyan-400 hover:bg-cyan-500 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-black rounded-2xl shadow-lg shadow-cyan-200 transition-all flex items-center justify-center gap-2 active:scale-95"
                       >
                         {isProcessingPayment ? (
-                          <span className="flex items-center gap-2">Connecting to Paystack...</span>
+                          <span className="flex items-center gap-2">Processing Order...</span>
                         ) : (
-                          <><CreditCard className="w-5 h-5" /> Pay Now ₦{total.toLocaleString()}</>
+                          <><CheckCircle2 className="w-5 h-5" /> I've Made Payment</>
                         )}
                       </button>
                     </div>
