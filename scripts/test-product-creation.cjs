@@ -6,7 +6,7 @@ async function test() {
     const loginRes = await fetch('http://localhost:5000/api/admin/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin@fezyslimes.com', password: 'Admin@12345' })
+      body: JSON.stringify({ username: 'admin_live_support@fezyslimes.com', password: 'DEcGS/QPYRXJ/8jh' })
     });
     
     if (!loginRes.ok) throw new Error('Login failed: ' + await loginRes.text());

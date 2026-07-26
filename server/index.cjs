@@ -10,6 +10,7 @@ const nodemailer = require('nodemailer');
 const { initializeApp: initializeAdminApp, cert } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { v2: cloudinary } = require('cloudinary');
 const shippingService = require('./shippingService.cjs');
 // Local credentials live in the ignored .env.local file; deployed platforms
 // provide the same values through their environment.
@@ -47,6 +48,19 @@ const adminAuth = getAuth();
 const db = getFirestore();
 db.settings({ ignoreUndefinedProperties: true });
 
+// Cloudinary — server-side image hosting (persists across redeploys on any platform)
+if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+  console.warn('[Warn] Cloudinary env vars not set. Product image uploads will fail.');
+} else {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key:    process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true,
+  });
+  console.log('[Cloudinary] Configured successfully.');
+}
+
 const app = express();
 
 // Configure CORS from deployment configuration while preserving local Vite dev.
@@ -73,24 +87,8 @@ app.use(cors({
 
 app.use(express.json());
 
-// Serve uploaded images statically
-app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
-
-// Configure Multer for File Uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const dir = path.join(__dirname, '../public/uploads');
-    if (!fs.existsSync(dir)){
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    cb(null, dir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
-});
-const upload = multer({ storage: storage });
+// Configure Multer for File Uploads (Memory Storage for Serverless Firebase Upload)
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Admin configuration
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin@fezyslimes.com';
@@ -114,13 +112,40 @@ function verifyAdminToken(req, res, next) {
   });
 }
 
-// Admin: Upload image
-app.post('/api/admin/upload', verifyAdminToken, upload.single('image'), (req, res) => {
+// Admin: Upload product image to Cloudinary
+// Images are uploaded server-side using the Admin JWT, keeping API secrets
+// off the client. The returned URL is a permanent Cloudinary CDN URL that
+// survives redeploys on any hosting platform.
+app.post('/api/admin/upload', verifyAdminToken, upload.single('image'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No image file provided' });
   }
-  const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-  res.status(200).json({ url: imageUrl });
+
+  try {
+    const uploadResult = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'fezyslimes/products',
+          resource_type: 'image',
+          allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+          transformation: [
+            { width: 800, height: 800, crop: 'limit', quality: 'auto:good', fetch_format: 'auto' }
+          ]
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        }
+      );
+      stream.end(req.file.buffer);
+    });
+
+    console.log(`[Cloudinary] Uploaded: ${uploadResult.secure_url}`);
+    res.status(200).json({ url: uploadResult.secure_url });
+  } catch (error) {
+    console.error('[Cloudinary Upload Error]:', error.message);
+    res.status(500).json({ error: 'Failed to upload image to Cloudinary. Check CLOUDINARY_* env vars.' });
+  }
 });
 
 // Customer identity always comes from a verified Firebase ID token, never a
@@ -251,12 +276,13 @@ app.get('/api/bank-details', async (req, res) => {
   try {
     const docRef = db.collection('settings').doc('bank_details');
     const snap = await docRef.get();
-    if (snap.exists()) {
+    if (snap.exists) {
       return res.status(200).json(snap.data());
     }
     // Return empty defaults so frontend always gets a valid shape
     return res.status(200).json({ bankName: '', accountNumber: '', accountName: '' });
   } catch (err) {
+    console.error('[bank-details GET]', err.message);
     return res.status(500).json({ error: 'Failed to fetch bank details.' });
   }
 });
@@ -355,7 +381,7 @@ app.put('/api/admin/orders/:id/confirm-payment', verifyAdminToken, async (req, r
     const { id } = req.params;
     const orderRef = db.collection('orders').doc(id);
     const snap = await orderRef.get();
-    if (!snap.exists()) return res.status(404).json({ error: 'Order not found.' });
+    if (!snap.exists) return res.status(404).json({ error: 'Order not found.' });
 
     await orderRef.update({
       paymentStatus: 'Paid',
