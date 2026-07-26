@@ -405,7 +405,7 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                           <span className="font-bold text-slate-800">₦{subtotal.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Shipping Fee ({shippingMethod})</span>
+                          <span>Shipping Fee ({selectedState === 'Lagos' ? selectedCourier : 'DHL'})</span>
                           <span className="font-bold text-slate-800">₦{shippingCost.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between border-t border-slate-200 pt-4 text-lg">
