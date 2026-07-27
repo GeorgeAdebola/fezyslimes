@@ -13,9 +13,10 @@ dist
 dist-ssr
 *.local
 
-# Environment variables
+# Environment variables — block all .env files EXCEPT the public template
 .env
 .env.*
+!.env.example
 
 # Firebase & GCP service accounts
 *.json
@@ -24,7 +25,6 @@ dist-ssr
 !tsconfig.json
 !.oxlintrc.json
 !vercel.json
-
 
 # Editor directories and files
 .vscode/*
