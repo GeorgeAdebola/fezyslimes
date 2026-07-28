@@ -521,8 +521,10 @@ function OrdersSection({ authFetch }) {
       const list = Array.isArray(data) ? data : [];
       // Sort: newest first
       list.sort((a, b) => {
-        const aTime = a.createdAt?.toMillis?.() || new Date(a.createdAt?.seconds * 1000 || 0).getTime();
-        const bTime = b.createdAt?.toMillis?.() || new Date(b.createdAt?.seconds * 1000 || 0).getTime();
+        const aSecs = a.createdAt?.seconds || a.createdAt?._seconds || 0;
+        const bSecs = b.createdAt?.seconds || b.createdAt?._seconds || 0;
+        const aTime = a.createdAt?.toMillis?.() || new Date(aSecs * 1000).getTime();
+        const bTime = b.createdAt?.toMillis?.() || new Date(bSecs * 1000).getTime();
         return bTime - aTime;
       });
       setOrders(list);
@@ -574,7 +576,7 @@ function OrdersSection({ authFetch }) {
 
   const formatDate = (timestamp) => {
     if (!timestamp) return 'N/A';
-    const dateObj = timestamp.toDate ? timestamp.toDate() : new Date((timestamp.seconds || 0) * 1000);
+    const dateObj = timestamp.toDate ? timestamp.toDate() : new Date((timestamp.seconds || timestamp._seconds || 0) * 1000);
     return dateObj.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
