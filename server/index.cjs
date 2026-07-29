@@ -302,6 +302,59 @@ app.put('/api/admin/settings/bank-details', verifyAdminToken, async (req, res) =
   }
 });
 
+// ---------------------------------------------------------------------------
+// SHIPPING RATES (public read, admin write)
+// Stored in Firestore as settings/shipping_rates → { zones: [{key, label, rate}] }
+// ---------------------------------------------------------------------------
+
+const SHIPPING_RATES_DEFAULT = [
+  { key: 'Lagos-Uber',   label: 'Lagos (Uber Courier)',              rate: 3000, courier: 'Uber',   state: 'Lagos' },
+  { key: 'Lagos-Gokada', label: 'Lagos (Gokada Bike)',               rate: 2500, courier: 'Gokada', state: 'Lagos' },
+  { key: 'Ogun-DHL',     label: 'Ogun State (DHL)',                  rate: 3500, courier: 'DHL',    state: 'Ogun State' },
+  { key: 'Oyo-DHL',      label: 'Oyo State (DHL)',                   rate: 3500, courier: 'DHL',    state: 'Oyo State' },
+  { key: 'Abuja-DHL',    label: 'Abuja FCT (DHL)',                   rate: 5000, courier: 'DHL',    state: 'Abuja (FCT)' },
+  { key: 'PH-DHL',       label: 'Port Harcourt / Rivers State (DHL)', rate: 4500, courier: 'DHL',   state: 'Port Harcourt / Rivers State' },
+];
+
+// GET shipping rates (public — used by Contact page and checkout)
+app.get('/api/shipping-rates', async (req, res) => {
+  try {
+    const docRef = db.collection('settings').doc('shipping_rates');
+    const snap = await docRef.get();
+    if (snap.exists) {
+      const data = snap.data();
+      return res.status(200).json(Array.isArray(data.zones) ? data.zones : SHIPPING_RATES_DEFAULT);
+    }
+    // First-time: return defaults (and seed Firestore)
+    await docRef.set({ zones: SHIPPING_RATES_DEFAULT });
+    return res.status(200).json(SHIPPING_RATES_DEFAULT);
+  } catch (err) {
+    console.error('[shipping-rates GET]', err.message);
+    return res.status(500).json({ error: 'Failed to fetch shipping rates.' });
+  }
+});
+
+// PUT shipping rates (admin only) — replaces the full zones array
+app.put('/api/admin/shipping-rates', verifyAdminToken, async (req, res) => {
+  const { zones } = req.body;
+  if (!Array.isArray(zones) || zones.length === 0) {
+    return res.status(400).json({ error: 'zones must be a non-empty array.' });
+  }
+  // Validate each zone has required fields
+  for (const z of zones) {
+    if (!z.key || !z.label || z.rate === undefined) {
+      return res.status(400).json({ error: 'Each zone must have key, label, and rate.' });
+    }
+  }
+  try {
+    await db.collection('settings').doc('shipping_rates').set({ zones });
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('[shipping-rates PUT]', err.message);
+    return res.status(500).json({ error: 'Failed to update shipping rates.' });
+  }
+});
+
 // POST place-order — customer clicks "I've Made Payment"
 // Creates the order in Firestore with paymentStatus 'Awaiting Payment Confirmation'.
 app.post('/api/place-order', async (req, res) => {

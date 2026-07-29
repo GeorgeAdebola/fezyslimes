@@ -18,9 +18,9 @@ import {
   X
 } from 'lucide-react';
 import { useOutletContext } from 'react-router-dom';
-import { categories, shippingLocations } from '../data';
+import { categories } from '../data';
 import CustomerReviews from '../components/CustomerReviews';
-import { fetchProducts } from '../services/productService';
+import { fetchProducts, API_BASE } from '../services/productService';
 import toast from 'react-hot-toast';
 
 import productVideo from '../assets/5992522466562415265.mp4';
@@ -32,6 +32,7 @@ export default function Home() {
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState(null);
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
+  const [shippingZones, setShippingZones] = useState([]);
 
   // Prevent body scrolling when video lightbox is open
   useEffect(() => {
@@ -67,6 +68,14 @@ export default function Home() {
   useEffect(() => {
     setIsLoadingProducts(true);
     loadProducts();
+  }, []);
+
+  // Fetch live shipping zones from admin-managed settings
+  useEffect(() => {
+    fetch(`${API_BASE}/api/shipping-rates`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { if (Array.isArray(data)) setShippingZones(data); })
+      .catch(() => {});
   }, []);
 
   const filteredProducts = products.filter(prod => {
@@ -569,12 +578,14 @@ export default function Home() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
-                      {shippingLocations.map((loc) => (
-                        <tr key={loc.name} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-3 px-4 sm:px-6 text-slate-800 font-bold">{loc.name}</td>
-                          <td className="py-3 px-4 sm:px-6 text-right font-black text-pink-500">₦{loc.price.toLocaleString()}</td>
+                      {shippingZones.length > 0 ? shippingZones.map((zone) => (
+                        <tr key={zone.key} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-4 sm:px-6 text-slate-800 font-bold">{zone.label}</td>
+                          <td className="py-3 px-4 sm:px-6 text-right font-black text-pink-500">₦{(zone.rate || 0).toLocaleString()}</td>
                         </tr>
-                      ))}
+                      )) : (
+                        <tr><td colSpan={2} className="py-6 text-center text-slate-400 text-sm font-medium">Loading rates...</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>

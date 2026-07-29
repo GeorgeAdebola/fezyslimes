@@ -25,7 +25,7 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
   const [landmark, setLandmark] = useState('');
   const [notes, setNotes] = useState('');
   const [selectedCourier, setSelectedCourier] = useState('Uber');
-  const [rates, setRates] = useState({});
+  const [rates, setRates] = useState([]);
   
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [createdOrderId, setCreatedOrderId] = useState('');
@@ -33,7 +33,7 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
   
   const [bankDetails, setBankDetails] = useState({ bankName: '', accountName: '', accountNumber: '' });
 
-  // Fetch active shipping rates & bank details
+  // Fetch active shipping rates (now an array of zone objects) & bank details
   useEffect(() => {
     if (!isOpen) return;
     const fetchRates = async () => {
@@ -41,7 +41,8 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
         const response = await fetch(`${API_BASE}/api/shipping-rates`);
         if (response.ok) {
           const data = await response.json();
-          setRates(data);
+          // API now returns an array of zone objects
+          setRates(Array.isArray(data) ? data : []);
         }
       } catch (err) {
         console.error("Error fetching shipping rates:", err);
@@ -86,40 +87,28 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
     prefillDefaultAddress();
   }, [currentUser, isOpen]);
 
-  const ALLOWED_STATES = [
-    'Lagos',
-    'Ogun State',
-    'Oyo State',
-    'Abuja (FCT)',
-    'Port Harcourt / Rivers State'
+  // Build unique state list and allowed states from fetched zones
+  const uniqueStates = [...new Set((Array.isArray(rates) ? rates : []).map(z => z.state).filter(Boolean))];
+  const ALLOWED_STATES = uniqueStates.length > 0 ? uniqueStates : [
+    'Lagos', 'Ogun State', 'Oyo State', 'Abuja (FCT)', 'Port Harcourt / Rivers State'
   ];
   const isStateSupported = ALLOWED_STATES.includes(selectedState);
 
   const getDeliveryFee = () => {
     if (!isStateSupported) return 0;
-    let key = '';
+    const zonesArr = Array.isArray(rates) ? rates : [];
+    // For Lagos, match by both state and courier
     if (selectedState === 'Lagos') {
-      key = `Lagos-${selectedCourier}`;
-    } else if (selectedState === 'Ogun State') {
-      key = 'Ogun-DHL';
-    } else if (selectedState === 'Oyo State') {
-      key = 'Oyo-DHL';
-    } else if (selectedState === 'Abuja (FCT)') {
-      key = 'Abuja-DHL';
-    } else if (selectedState === 'Port Harcourt / Rivers State') {
-      key = 'PH-DHL';
+      const match = zonesArr.find(z => z.state === 'Lagos' && z.courier === selectedCourier);
+      return match ? match.rate : 0;
     }
-    
-    const fallbackRates = {
-      "Lagos-Uber": 3000,
-      "Lagos-Gokada": 2500,
-      "Ogun-DHL": 3500,
-      "Oyo-DHL": 3500,
-      "Abuja-DHL": 5000,
-      "PH-DHL": 4500
-    };
-    return rates[key] !== undefined ? rates[key] : (fallbackRates[key] || 0);
+    // For other states, pick first matching zone
+    const match = zonesArr.find(z => z.state === selectedState);
+    return match ? match.rate : 0;
   };
+
+  // Lagos courier options from zones
+  const lagosZones = (Array.isArray(rates) ? rates : []).filter(z => z.state === 'Lagos');
 
   const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const shippingCost = getDeliveryFee();
@@ -329,12 +318,10 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                       <div className="space-y-4">
                         <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">State</label>
-                          <select required value={selectedState} onChange={(e) => { setSelectedState(e.target.value); if(e.target.value !== 'Lagos') setSelectedCourier('DHL'); }} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 outline-none font-medium transition-all appearance-none">
-                            <option value="Lagos">Lagos</option>
-                            <option value="Ogun State">Ogun State</option>
-                            <option value="Oyo State">Oyo State</option>
-                            <option value="Abuja (FCT)">Abuja (FCT)</option>
-                            <option value="Port Harcourt / Rivers State">Port Harcourt / Rivers State</option>
+                          <select required value={selectedState} onChange={(e) => { setSelectedState(e.target.value); setSelectedCourier('DHL'); }} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 outline-none font-medium transition-all appearance-none">
+                            {ALLOWED_STATES.map(s => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
                             <option value="Other">Other (Unsupported)</option>
                           </select>
                         </div>
@@ -362,22 +349,26 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                     <div>
                       <h3 className="text-xl font-black text-slate-800 border-b border-slate-100 pb-2 mb-4">Delivery Courier <span className="text-red-400">*</span></h3>
                       {selectedState === 'Lagos' ? (
-                        <div className="grid grid-cols-2 gap-4">
-                          <div onClick={() => setSelectedCourier('Uber')} className={`border rounded-2xl p-4 cursor-pointer transition-all ${selectedCourier === 'Uber' ? 'border-cyan-400 bg-cyan-50/50' : 'border-slate-200 hover:border-cyan-200'}`}>
-                            <div className="flex justify-between items-center mb-1">
-                              <span className="font-bold text-slate-800 text-sm">Uber Courier</span>
-                              {selectedCourier === 'Uber' && <CheckCircle2 className="w-4 h-4 text-cyan-500" />}
-                            </div>
-                            <p className="text-xs text-slate-500 font-semibold">Flat Rate: ₦{getDeliveryFee().toLocaleString()}</p>
+                        lagosZones.length > 0 ? (
+                          <div className="grid grid-cols-2 gap-4">
+                            {lagosZones.map(zone => (
+                              <div key={zone.key} onClick={() => setSelectedCourier(zone.courier)} className={`border rounded-2xl p-4 cursor-pointer transition-all ${selectedCourier === zone.courier ? 'border-cyan-400 bg-cyan-50/50' : 'border-slate-200 hover:border-cyan-200'}`}>
+                                <div className="flex justify-between items-center mb-1">
+                                  <span className="font-bold text-slate-800 text-sm">{zone.label.replace('Lagos', '').replace(/[()]/g, '').trim() || zone.courier}</span>
+                                  {selectedCourier === zone.courier && <CheckCircle2 className="w-4 h-4 text-cyan-500" />}
+                                </div>
+                                <p className="text-xs text-slate-500 font-semibold">Flat Rate: ₦{(zone.rate || 0).toLocaleString()}</p>
+                              </div>
+                            ))}
                           </div>
-                          <div onClick={() => setSelectedCourier('Gokada')} className={`border rounded-2xl p-4 cursor-pointer transition-all ${selectedCourier === 'Gokada' ? 'border-cyan-400 bg-cyan-50/50' : 'border-slate-200 hover:border-cyan-200'}`}>
-                            <div className="flex justify-between items-center mb-1">
-                              <span className="font-bold text-slate-800 text-sm">Gokada Bike</span>
-                              {selectedCourier === 'Gokada' && <CheckCircle2 className="w-4 h-4 text-cyan-500" />}
+                        ) : (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div onClick={() => setSelectedCourier('Uber')} className={`border rounded-2xl p-4 cursor-pointer transition-all ${selectedCourier === 'Uber' ? 'border-cyan-400 bg-cyan-50/50' : 'border-slate-200 hover:border-cyan-200'}`}>
+                              <span className="font-bold text-slate-800 text-sm block">Uber Courier</span>
+                              <p className="text-xs text-slate-500 font-semibold">Flat Rate: ₦{getDeliveryFee().toLocaleString()}</p>
                             </div>
-                            <p className="text-xs text-slate-500 font-semibold">Flat Rate: ₦{(rates['Lagos-Gokada'] !== undefined ? rates['Lagos-Gokada'] : 2500).toLocaleString()}</p>
                           </div>
-                        </div>
+                        )
                       ) : isStateSupported ? (
                         <div className="border border-cyan-400 bg-cyan-50/50 rounded-2xl p-4 flex justify-between items-center">
                           <div>

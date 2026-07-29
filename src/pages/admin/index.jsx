@@ -806,16 +806,14 @@ function OverviewSection({ authFetch }) {
 
 // ---- Shipping Rates Settings Section ----
 function ShippingRatesSection({ authFetch }) {
-  const [rates, setRates] = useState({
-    "Lagos-Uber": 3000,
-    "Lagos-Gokada": 2500,
-    "Ogun-DHL": 3500,
-    "Oyo-DHL": 3500,
-    "Abuja-DHL": 5000,
-    "PH-DHL": 4500
-  });
+  const [zones, setZones] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  // New zone form state
+  const [newLabel, setNewLabel] = useState('');
+  const [newState, setNewState] = useState('');
+  const [newCourier, setNewCourier] = useState('DHL');
+  const [newRate, setNewRate] = useState('');
 
   useEffect(() => {
     const loadRates = async () => {
@@ -824,7 +822,7 @@ function ShippingRatesSection({ authFetch }) {
         const res = await fetch(`${API_BASE}/api/shipping-rates`);
         if (res.ok) {
           const data = await res.json();
-          setRates(prev => ({ ...prev, ...data }));
+          if (Array.isArray(data)) setZones(data);
         }
       } catch (err) {
         toast.error('Failed to load shipping rates.');
@@ -835,30 +833,48 @@ function ShippingRatesSection({ authFetch }) {
     loadRates();
   }, []);
 
-  const handleSave = async (e) => {
-    e.preventDefault();
+  const handleRateChange = (idx, value) => {
+    const numericVal = value === '' ? 0 : parseInt(value, 10);
+    setZones(prev => prev.map((z, i) => i === idx ? { ...z, rate: isNaN(numericVal) ? 0 : numericVal } : z));
+  };
+
+  const handleRemoveZone = (idx) => {
+    if (!window.confirm('Remove this delivery zone?')) return;
+    setZones(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleAddZone = () => {
+    if (!newLabel.trim() || !newState.trim() || newRate === '') {
+      toast.error('Please fill in Zone Name, State, and Rate.');
+      return;
+    }
+    const key = `${newState.replace(/\s+/g, '')}-${newCourier}-${Date.now()}`;
+    setZones(prev => [...prev, {
+      key,
+      label: newLabel.trim(),
+      state: newState.trim(),
+      courier: newCourier,
+      rate: parseInt(newRate, 10) || 0
+    }]);
+    setNewLabel(''); setNewState(''); setNewCourier('DHL'); setNewRate('');
+    toast.success('Zone added — click Save to confirm.');
+  };
+
+  const handleSave = async () => {
     setIsSaving(true);
     try {
       const res = await authFetch('/api/admin/shipping-rates', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rates)
+        body: JSON.stringify({ zones })
       });
       if (!res.ok) throw new Error('Failed to update shipping rates.');
-      toast.success('Shipping rates updated successfully! 🚚');
+      toast.success('Shipping rates saved! 🚚');
     } catch (err) {
       toast.error(err.message);
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const handleRateChange = (key, value) => {
-    const numericVal = value === '' ? 0 : parseInt(value, 10);
-    setRates(prev => ({
-      ...prev,
-      [key]: isNaN(numericVal) ? 0 : numericVal
-    }));
   };
 
   if (isLoading) {
@@ -869,50 +885,115 @@ function ShippingRatesSection({ authFetch }) {
     );
   }
 
-  const rateKeys = [
-    { key: 'Lagos-Uber', label: 'Lagos (Uber Courier)' },
-    { key: 'Lagos-Gokada', label: 'Lagos (Gokada Bike)' },
-    { key: 'Ogun-DHL', label: 'Ogun State (DHL)' },
-    { key: 'Oyo-DHL', label: 'Oyo State (DHL)' },
-    { key: 'Abuja-DHL', label: 'Abuja FCT (DHL)' },
-    { key: 'PH-DHL', label: 'Port Harcourt / Rivers State (DHL)' }
-  ];
-
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-2xl font-black text-slate-800">Shipping & Delivery Rates</h2>
-        <p className="text-slate-500 text-sm font-medium">Configure flat-rate fees for delivery zones and couriers</p>
+        <h2 className="text-2xl font-black text-slate-800">Shipping &amp; Delivery Rates</h2>
+        <p className="text-slate-500 text-sm font-medium">Add, remove, and edit delivery zones. Changes reflect live on the Contact page and checkout immediately after saving.</p>
       </div>
 
-      <form onSubmit={handleSave} className="bg-white border border-slate-200 rounded-3xl p-6 space-y-6 shadow-sm">
-        <div className="space-y-4">
-          {rateKeys.map(({ key, label }) => (
-            <div key={key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 last:border-0 last:pb-0">
-              <label className="text-sm font-bold text-slate-600">{label}</label>
-              <div className="relative max-w-[200px] w-full">
+      {/* Existing zones */}
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm">
+        {zones.length === 0 && (
+          <p className="text-slate-400 text-sm font-medium text-center py-4">No delivery zones yet. Add one below.</p>
+        )}
+        {zones.map((zone, idx) => (
+          <div key={zone.key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 last:border-0 last:pb-0">
+            <div className="flex-1">
+              <p className="text-sm font-bold text-slate-700">{zone.label}</p>
+              <p className="text-[11px] text-slate-400 font-semibold mt-0.5">State: {zone.state} · Courier: {zone.courier || 'DHL'}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="relative w-[150px]">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">₦</span>
                 <input
                   type="number"
                   min="0"
-                  required
-                  value={rates[key] ?? ''}
-                  onChange={(e) => handleRateChange(key, e.target.value)}
+                  value={zone.rate ?? ''}
+                  onChange={(e) => handleRateChange(idx, e.target.value)}
                   className="w-full pl-8 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-slate-800 focus:outline-none focus:border-cyan-400 transition-colors"
                 />
               </div>
+              <button
+                onClick={() => handleRemoveZone(idx)}
+                title="Remove zone"
+                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
+      </div>
 
+      {/* Add new zone */}
+      <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm">
+        <h3 className="text-base font-black text-slate-700 flex items-center gap-2">
+          <Plus className="w-4 h-4 text-cyan-500" /> Add New Delivery Zone
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">Zone Label (shown to customers)</label>
+            <input
+              type="text"
+              placeholder="e.g. Kano State (DHL)"
+              value={newLabel}
+              onChange={e => setNewLabel(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:border-cyan-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">State / Region</label>
+            <input
+              type="text"
+              placeholder="e.g. Kano State"
+              value={newState}
+              onChange={e => setNewState(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:border-cyan-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">Courier</label>
+            <select
+              value={newCourier}
+              onChange={e => setNewCourier(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:border-cyan-400 appearance-none"
+            >
+              <option value="DHL">DHL</option>
+              <option value="Uber">Uber</option>
+              <option value="Gokada">Gokada</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1">Rate (₦)</label>
+            <input
+              type="number"
+              min="0"
+              placeholder="e.g. 6000"
+              value={newRate}
+              onChange={e => setNewRate(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:border-cyan-400"
+            />
+          </div>
+        </div>
         <button
-          type="submit"
-          disabled={isSaving}
-          className="w-full py-3.5 bg-cyan-400 hover:bg-cyan-500 disabled:bg-slate-200 text-white font-black rounded-2xl shadow-lg shadow-cyan-200 transition-all active:scale-95 text-base flex items-center justify-center gap-2"
+          type="button"
+          onClick={handleAddZone}
+          className="flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-black rounded-xl text-sm transition-all active:scale-95"
         >
-          {isSaving ? 'Saving Rates...' : 'Save Shipping Rates'}
+          <Plus className="w-4 h-4" /> Add Zone
         </button>
-      </form>
+      </div>
+
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={isSaving}
+        className="w-full py-3.5 bg-cyan-400 hover:bg-cyan-500 disabled:bg-slate-200 text-white font-black rounded-2xl shadow-lg shadow-cyan-200 transition-all active:scale-95 text-base flex items-center justify-center gap-2"
+      >
+        {isSaving ? 'Saving Rates...' : 'Save Shipping Rates'}
+      </button>
     </div>
   );
 }
