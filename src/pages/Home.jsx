@@ -20,7 +20,7 @@ import {
 import { useOutletContext } from 'react-router-dom';
 import { categories, shippingLocations } from '../data';
 import CustomerReviews from '../components/CustomerReviews';
-import { fetchProducts, subscribeProducts } from '../services/productService';
+import { fetchProducts } from '../services/productService';
 import toast from 'react-hot-toast';
 
 import productVideo from '../assets/5992522466562415265.mp4';
@@ -66,26 +66,7 @@ export default function Home() {
 
   useEffect(() => {
     setIsLoadingProducts(true);
-    
-    // Initial fetch fallback
     loadProducts();
-
-    // Subscribe to live Firestore product updates
-    const unsubscribe = subscribeProducts(
-      (liveProducts) => {
-        if (Array.isArray(liveProducts)) {
-          setProducts(liveProducts);
-          setProductsError(null);
-        }
-        setIsLoadingProducts(false);
-      },
-      (err) => {
-        console.warn('[Home] Realtime listener fallback to static fetch:', err);
-        setIsLoadingProducts(false);
-      }
-    );
-
-    return () => unsubscribe();
   }, []);
 
   const filteredProducts = products.filter(prod => {
