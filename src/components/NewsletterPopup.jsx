@@ -93,12 +93,13 @@ export default function NewsletterPopup() {
               {/* Banner image */}
               <div className="flex-1 min-h-[180px]">
                 <img 
-                  src="/src/assets/popup-banner.jpg" 
+                  src="/welcome_slime.jpg" 
                   alt="Fezy Slimes" 
                   className="w-full h-full object-cover"
                   onError={(e) => {
-                    // Fallback if image not uploaded yet
-                    e.target.src = 'https://images.unsplash.com/photo-1518156677180-95a2893f3e9f?auto=format&fit=crop&w=800&q=80';
+                    // Fallback to a branded placeholder if the primary image fails
+                    e.target.onerror = null; // Prevent infinite loop if fallback also fails
+                    e.target.src = '/logo.png';
                   }}
                 />
               </div>
