@@ -1,7 +1,100 @@
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ShoppingCart, Sparkles, Smile } from 'lucide-react';
+import { X, ShoppingCart, Sparkles, Smile, ChevronLeft, ChevronRight } from 'lucide-react';
+
+// Image gallery slider with arrow nav + dot indicators + swipe support
+function ImageGallery({ images }) {
+  const [current, setCurrent] = useState(0);
+  const touchStartX = useRef(null);
+  const total = images.length;
+
+  const prev = () => setCurrent(i => (i - 1 + total) % total);
+  const next = () => setCurrent(i => (i + 1) % total);
+
+  const onTouchStart = (e) => { touchStartX.current = e.touches[0].clientX; };
+  const onTouchEnd = (e) => {
+    if (touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    if (Math.abs(dx) > 40) dx < 0 ? next() : prev();
+    touchStartX.current = null;
+  };
+
+  if (total === 0) return null;
+
+  return (
+    <div
+      className="relative h-full w-full overflow-hidden bg-slate-50 select-none"
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      {/* Images */}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.img
+          key={current}
+          src={images[current]}
+          alt={`Product image ${current + 1}`}
+          className="absolute inset-0 w-full h-full object-cover"
+          initial={{ opacity: 0, x: 30 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -30 }}
+          transition={{ duration: 0.22 }}
+          draggable={false}
+        />
+      </AnimatePresence>
+
+      {/* Gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-t from-white/80 via-transparent to-transparent md:bg-gradient-to-r md:from-transparent md:to-white/90 pointer-events-none" />
+
+      {/* Arrows — only show when > 1 image */}
+      {total > 1 && (
+        <>
+          <button
+            onClick={prev}
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/80 hover:bg-white text-slate-600 rounded-full shadow-md border border-white/60 transition-all hover:scale-105 active:scale-95"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button
+            onClick={next}
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-2 bg-white/80 hover:bg-white text-slate-600 rounded-full shadow-md border border-white/60 transition-all hover:scale-105 active:scale-95"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+
+          {/* Dot indicators */}
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex gap-1.5">
+            {images.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setCurrent(i)}
+                className={`rounded-full transition-all ${
+                  i === current
+                    ? 'w-4 h-2 bg-cyan-400'
+                    : 'w-2 h-2 bg-white/60 hover:bg-white'
+                }`}
+              />
+            ))}
+          </div>
+
+          {/* Counter badge */}
+          <div className="absolute top-3 right-3 z-10 px-2 py-0.5 bg-black/30 backdrop-blur-sm rounded-full text-[10px] font-black text-white">
+            {current + 1}/{total}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function ProductQuickView({ product, isOpen, onClose, onAddToCart }) {
+  // Normalize: support both single `image` string and `images` array
+  const images = (() => {
+    if (!product) return [];
+    if (Array.isArray(product.images) && product.images.length > 0) return product.images;
+    if (product.image) return [product.image];
+    return [];
+  })();
+
   return (
     <AnimatePresence>
       {isOpen && product && (
@@ -26,14 +119,9 @@ export default function ProductQuickView({ product, isOpen, onClose, onAddToCart
               <X className="w-5 h-5" />
             </button>
 
-            {/* Product Image */}
-            <div className="md:w-1/2 relative h-64 md:h-auto min-h-[300px] bg-slate-50">
-              <img 
-                src={product.image} 
-                alt={product.name} 
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-white/80 via-transparent to-transparent md:bg-gradient-to-r md:from-transparent md:to-white/90" />
+            {/* Product Image Gallery */}
+            <div className="md:w-1/2 relative h-64 md:h-auto min-h-[300px]">
+              <ImageGallery images={images} />
             </div>
 
             {/* Product Details */}

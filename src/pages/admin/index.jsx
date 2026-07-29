@@ -118,10 +118,11 @@ function ProductsSection({ authFetch }) {
 
   const emptyForm = {
     name: '', description: '', price: '', category: '',
-    texture: '', scent: '', stock: '', imageUrl: '', imageFile: null
+    texture: '', scent: '', stock: '', imageUrl: ''
   };
   const [form, setForm] = useState(emptyForm);
-  const [imagePreview, setImagePreview] = useState('');
+  // Multi-image state: array of { url: string, file: File|null }
+  const [imageSlots, setImageSlots] = useState([]); // { preview, file, url }
 
   const loadProducts = async () => {
     setIsLoading(true);
@@ -156,12 +157,26 @@ function ProductsSection({ authFetch }) {
   useEffect(() => { loadProducts(); }, []);
 
   const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setForm(prev => ({ ...prev, imageFile: file, imageUrl: '' }));
-    const reader = new FileReader();
-    reader.onloadend = () => setImagePreview(reader.result);
-    reader.readAsDataURL(file);
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    const newSlots = files.map(file => {
+      const preview = URL.createObjectURL(file);
+      return { preview, file, url: '' };
+    });
+    setImageSlots(prev => [...prev, ...newSlots]);
+    // Reset input so same files can be re-selected if needed
+    e.target.value = '';
+  };
+
+  const removeImageSlot = (idx) => {
+    setImageSlots(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const addImageByUrl = () => {
+    const url = form.imageUrl?.trim();
+    if (!url) return;
+    setImageSlots(prev => [...prev, { preview: url, file: null, url }]);
+    setForm(f => ({ ...f, imageUrl: '' }));
   };
 
   const openEditForm = (product) => {
@@ -174,17 +189,20 @@ function ProductsSection({ authFetch }) {
       texture: product.texture || '',
       scent: product.scent || '',
       stock: product.stock?.toString() || '',
-      imageUrl: product.image || '',
-      imageFile: null
+      imageUrl: ''
     });
-    setImagePreview(product.image || '');
+    // Build imageSlots from existing images array or fallback single image
+    const existingImages = Array.isArray(product.images) && product.images.length > 0
+      ? product.images
+      : product.image ? [product.image] : [];
+    setImageSlots(existingImages.map(url => ({ preview: url, file: null, url })));
     setShowForm(true);
   };
 
   const openNewForm = () => {
     setEditingProduct(null);
     setForm(emptyForm);
-    setImagePreview('');
+    setImageSlots([]);
     setShowForm(true);
   };
 
@@ -200,33 +218,26 @@ function ProductsSection({ authFetch }) {
     setUploadProgress(null);
 
     try {
-      // ---- Step 1: Upload image to backend if a file was selected ----
-      let finalImageUrl = form.imageUrl;
-      if (form.imageFile) {
-        toast.loading('Uploading image to server...', { id: 'img-upload' });
-        
-        const formData = new FormData();
-        formData.append('image', form.imageFile);
-        
-        try {
-          const uploadRes = await authFetch('/api/admin/upload', {
-            method: 'POST',
-            body: formData,
-            // don't set Content-Type header, let browser set it with boundary for FormData
-          });
-          
-          if (!uploadRes.ok) throw new Error('Image upload failed');
-          
+      // ---- Step 1: Upload any file-based images to Cloudinary ----
+      const resolvedImages = [];
+      for (let i = 0; i < imageSlots.length; i++) {
+        const slot = imageSlots[i];
+        if (slot.file) {
+          toast.loading(`Uploading image ${i + 1} of ${imageSlots.filter(s => s.file).length}...`, { id: 'img-upload' });
+          const formData = new FormData();
+          formData.append('image', slot.file);
+          const uploadRes = await authFetch('/api/admin/upload', { method: 'POST', body: formData });
+          if (!uploadRes.ok) throw new Error(`Image ${i + 1} upload failed`);
           const uploadData = await uploadRes.json();
-          finalImageUrl = uploadData.url;
-        } catch (err) {
-          console.error('[Upload Error]', err);
-          throw new Error('Image upload failed. Please try again.');
-        } finally {
+          resolvedImages.push(uploadData.url);
           toast.dismiss('img-upload');
-          setUploadProgress(null);
+        } else if (slot.url) {
+          resolvedImages.push(slot.url);
         }
       }
+
+      // Fallback if no images at all, keep existing or use placeholder
+      const primaryImage = resolvedImages[0] || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80';
 
       // ---- Step 2: Prepare product payload ----
       const productPayload = {
@@ -237,7 +248,8 @@ function ProductsSection({ authFetch }) {
         texture: form.texture || '',
         scent: form.scent || '',
         stock: parseInt(form.stock, 10) || 0,
-        image: finalImageUrl || imagePreview || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80',
+        image: primaryImage,          // legacy field — keeps existing products working
+        images: resolvedImages,       // new multi-image field
         updatedAt: new Date().toISOString()
       };
 
@@ -403,38 +415,55 @@ function ProductsSection({ authFetch }) {
                   rows={3} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-medium focus:outline-none focus:border-cyan-400 resize-none" />
               </div>
 
-              {/* Image upload — Firebase Storage */}
+              {/* Multi-image upload */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-2">
-                  Product Image
-                  <span className="ml-2 text-cyan-500 font-normal normal-case">Uploaded to Server</span>
+                  Product Images
+                  <span className="ml-2 text-cyan-500 font-normal normal-case">Up to 6 images — first is the main photo</span>
                 </label>
-                <div className="flex gap-4 items-start">
-                  {imagePreview && (
-                    <img src={imagePreview} alt="Preview" className="w-24 h-24 object-cover rounded-2xl border border-slate-200 shrink-0" />
-                  )}
-                  <div className="flex-1 space-y-2">
+
+                {/* Image strip */}
+                {imageSlots.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {imageSlots.map((slot, idx) => (
+                      <div key={idx} className="relative group">
+                        <img src={slot.preview} alt={`img-${idx}`} className="w-20 h-20 object-cover rounded-xl border border-slate-200 shrink-0" />
+                        {idx === 0 && (
+                          <span className="absolute bottom-0 left-0 right-0 text-center text-[8px] font-black bg-cyan-400 text-white rounded-b-xl py-0.5">MAIN</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeImageSlot(idx)}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs font-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >×</button>
+                      </div>
+                    ))}
+                    {imageSlots.length < 6 && (
+                      <button type="button" onClick={() => fileInputRef.current?.click()}
+                        className="w-20 h-20 border-2 border-dashed border-slate-200 hover:border-cyan-400 rounded-xl flex items-center justify-center text-slate-400 hover:text-cyan-500 transition-all text-2xl font-light">
+                        +
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex gap-2 flex-wrap items-center">
+                  {imageSlots.length === 0 && (
                     <button type="button" onClick={() => fileInputRef.current?.click()}
                       className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:border-cyan-400 rounded-xl text-xs font-bold text-slate-600 transition-all">
-                      <Upload className="w-4 h-4" /> Upload Image File
+                      <Upload className="w-4 h-4" /> Upload Images
                     </button>
-                    <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-
-                    {/* Upload progress bar */}
-                    {uploadProgress !== null && (
-                      <div className="w-full bg-slate-100 rounded-full h-2">
-                        <div
-                          className="bg-cyan-400 h-2 rounded-full transition-all"
-                          style={{ width: `${uploadProgress}%` }}
-                        />
-                        <p className="text-[10px] text-slate-400 mt-1">{uploadProgress}% uploaded to server</p>
-                      </div>
-                    )}
-
-                    <p className="text-[10px] text-slate-400 font-semibold">— or paste an image URL —</p>
+                  )}
+                  <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileChange} className="hidden" />
+                  <p className="text-[10px] text-slate-400 font-semibold">— or paste URL —</p>
+                  <div className="flex gap-1 flex-1">
                     <input type="url" placeholder="https://..." value={form.imageUrl}
-                      onChange={e => { setForm({...form, imageUrl: e.target.value, imageFile: null}); setImagePreview(e.target.value); }}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-cyan-400" />
+                      onChange={e => setForm({...form, imageUrl: e.target.value})}
+                      className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-cyan-400 min-w-0" />
+                    <button type="button" onClick={addImageByUrl}
+                      className="px-3 py-2 bg-slate-100 hover:bg-cyan-50 hover:text-cyan-600 text-slate-500 font-bold rounded-xl text-xs transition-all">
+                      Add
+                    </button>
                   </div>
                 </div>
               </div>
@@ -442,7 +471,7 @@ function ProductsSection({ authFetch }) {
               <div className="flex gap-3 pt-2">
                 <button type="submit" disabled={isSaving}
                   className="px-5 py-2.5 bg-cyan-400 hover:bg-cyan-500 disabled:bg-slate-300 text-white font-black rounded-xl text-sm transition-all active:scale-95">
-                  {isSaving ? (uploadProgress !== null ? `Uploading ${uploadProgress}%...` : 'Saving...') : (editingProduct ? 'Update Product' : 'Create Product')}
+                  {isSaving ? 'Saving...' : (editingProduct ? 'Update Product' : 'Create Product')}
                 </button>
                 <button type="button" onClick={() => setShowForm(false)}
                   className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl text-sm transition-all">
@@ -464,8 +493,8 @@ function ProductsSection({ authFetch }) {
           {filtered.map(product => (
             <div key={product.id} className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
               <div className="relative h-44 bg-slate-100">
-                {product.image ? (
-                  <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                {(product.images?.[0] || product.image) ? (
+                  <img src={product.images?.[0] || product.image} alt={product.name} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-slate-300">
                     <ImageIcon className="w-12 h-12" />
