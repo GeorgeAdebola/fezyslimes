@@ -11,7 +11,7 @@ import { API_BASE } from './services/productService';
 
 const STEPS = ['Cart', 'Details', 'Shipping', 'Payment'];
 
-export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantity, onRemoveItem, onClearCart, onAddToCart }) {
+export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantity, onRemoveItem, onClearCart, onAddToCart, activatorProduct }) {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [currentStep, setCurrentStep] = useState(0); // 0: Cart, 1: Details, 2: Shipping, 3: Payment, 4: Success
@@ -255,10 +255,10 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                         <button 
                           onClick={() => onAddToCart({
                             id: 'slime-activator',
-                            name: 'Slime Activator (Borax Spray)',
-                            price: 1500,
-                            category: 'care',
-                            image: 'https://images.unsplash.com/photo-1607613009820-a29f7bb81c04?auto=format&fit=crop&w=600&q=80'
+                            name: activatorProduct?.name || 'Slime Activator',
+                            price: activatorProduct?.price ?? 4000,
+                            category: activatorProduct?.category || 'care',
+                            image: activatorProduct?.image || '/logo.png'
                           })}
                           className="px-4 py-2 bg-pink-400 hover:bg-pink-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md whitespace-nowrap active:scale-95 transition-all"
                         >

@@ -23,7 +23,19 @@ import RefundPolicy from './pages/legal/RefundPolicy';
 import FAQ from './pages/legal/FAQ';
 import { reviews } from './data'; // reviews are static UI content, not Firestore data
 import { getWishlist, updateWishlist } from './services/dbService';
+import { fetchProducts } from './services/productService';
 import toast from 'react-hot-toast';
+
+// Canonical ID used in the cart for the slime activator item
+const ACTIVATOR_CART_ID = 'slime-activator';
+// Fallback data if the product hasn't been created in admin yet
+const ACTIVATOR_FALLBACK = {
+  id: ACTIVATOR_CART_ID,
+  name: 'Slime Activator',
+  price: 4000,
+  category: 'care',
+  image: '/logo.png' // replaced by real product image once added via admin
+};
 
 function Layout() {
   const { currentUser } = useAuth();
@@ -33,6 +45,7 @@ function Layout() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [favorites, setFavorites] = useState([]);
   const [activeReviewIndex, setActiveReviewIndex] = useState(0);
+  const [activatorProduct, setActivatorProduct] = useState(ACTIVATOR_FALLBACK);
   const location = useLocation();
 
   // Load wishlist from database or localStorage fallback
@@ -52,6 +65,26 @@ function Layout() {
     };
     loadWishlist();
   }, [currentUser]);
+
+  // Fetch real Slime Activator product from admin-managed catalogue
+  useEffect(() => {
+    const loadActivator = async () => {
+      try {
+        const products = await fetchProducts();
+        const found = products.find(
+          (p) => p.name?.toLowerCase().includes('slime activator') || p.name?.toLowerCase() === 'slime activator'
+        );
+        if (found) {
+          // Use the real product but keep our canonical cart ID stable
+          setActivatorProduct({ ...found, id: ACTIVATOR_CART_ID });
+        }
+      } catch (err) {
+        // Silently keep the fallback — store still works
+        console.warn('[App] Could not load activator product from catalogue:', err);
+      }
+    };
+    loadActivator();
+  }, []);
 
   useEffect(() => {
     if (location.pathname !== '/') return;
@@ -88,9 +121,9 @@ function Layout() {
   };
 
   const adjustCartForActivator = (currentCart) => {
-    const slimeItems = currentCart.filter(item => item.id !== 'slime-activator');
+    const slimeItems = currentCart.filter(item => item.id !== ACTIVATOR_CART_ID);
     const numSlimes = slimeItems.reduce((acc, item) => acc + item.quantity, 0);
-    const activatorIndex = currentCart.findIndex(item => item.id === 'slime-activator');
+    const activatorIndex = currentCart.findIndex(item => item.id === ACTIVATOR_CART_ID);
 
     if (numSlimes >= 4) {
       if (activatorIndex > -1) {
@@ -99,6 +132,8 @@ function Layout() {
           const updated = [...currentCart];
           updated[activatorIndex] = {
             ...activator,
+            // Keep real image from the catalogue product
+            image: activator.image || activatorProduct.image,
             price: 0,
             name: 'FREE GIFT — Slime Activator',
             isFree: true,
@@ -107,15 +142,15 @@ function Layout() {
           return updated;
         }
       } else {
+        // Auto-add free activator using real product data
         return [
           ...currentCart,
           {
-            id: 'slime-activator',
+            ...activatorProduct,
+            id: ACTIVATOR_CART_ID,
             name: 'FREE GIFT — Slime Activator',
             price: 0,
             quantity: 1,
-            category: 'care',
-            image: 'https://images.unsplash.com/photo-1607613009820-a29f7bb81c04?auto=format&fit=crop&w=600&q=80',
             isFree: true
           }
         ];
@@ -124,7 +159,7 @@ function Layout() {
       if (activatorIndex > -1) {
         const activator = currentCart[activatorIndex];
         if (activator.isFree) {
-          return currentCart.filter(item => item.id !== 'slime-activator');
+          return currentCart.filter(item => item.id !== ACTIVATOR_CART_ID);
         }
       }
     }
@@ -231,6 +266,7 @@ function Layout() {
           onRemoveItem={handleRemoveItem}
           onClearCart={handleClearCart}
           onAddToCart={handleAddToCart}
+          activatorProduct={activatorProduct}
         />
 
         <ProductQuickView 
