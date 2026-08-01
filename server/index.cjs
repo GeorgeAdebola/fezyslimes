@@ -784,8 +784,17 @@ const withTimeout = (promise, ms, errorMsg) => {
 app.post('/api/admin/products', verifyAdminToken, async (req, res) => {
   console.log('[Backend POST /api/admin/products] Request received');
   try {
-    const { name, description, price, category, texture, scent, stock, image } = req.body;
+    const { name, description, price, category, texture, scent, stock, image, images } = req.body;
     console.log(`[Backend] Parsed payload for product: ${name}`);
+    // Normalise the images array — accept both the new multi-image field and the
+    // legacy single image string so older clients keep working.
+    const imagesArray = Array.isArray(images) && images.length > 0
+      ? images
+      : (image ? [image] : []);
+    const primaryImage = image ||
+      imagesArray[0] ||
+      'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80';
+    console.log(`[Backend] images array (${imagesArray.length} items):`, imagesArray);
 
     const productsRef = db.collection('products');
     const newId = productsRef.doc().id;
@@ -799,8 +808,10 @@ app.post('/api/admin/products', verifyAdminToken, async (req, res) => {
       texture: texture || '',
       scent: scent || '',
       stock: parseInt(stock || '0'),
-      // image is a Firebase Storage download URL sent from the frontend
-      image: image || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80',
+      // Legacy single-image field — keeps existing product cards working
+      image: primaryImage,
+      // Multi-image/video array — the authoritative media list going forward
+      images: imagesArray,
       rating: 5.0,
       reviewsCount: 0,
       createdAt: new Date()
@@ -810,11 +821,11 @@ app.post('/api/admin/products', verifyAdminToken, async (req, res) => {
     // Wrapped in a timeout so it never hangs silently if Firestore network is down
     await withTimeout(
       productsRef.doc(newId).set(newProduct),
-      10000, 
-      "Firestore setDoc timed out after 10 seconds. Check Firebase projectId and network connectivity."
+      10000,
+      'Firestore setDoc timed out after 10 seconds. Check Firebase projectId and network connectivity.'
     );
-    
-    console.log(`[Backend] Document ${newId} saved successfully!`);
+
+    console.log(`[Backend] Document ${newId} saved successfully with ${imagesArray.length} media item(s)!`);
     return res.status(201).json({ success: true, product: newProduct });
   } catch (err) {
     console.error('[Backend POST /api/admin/products] Fatal Error:', err);
@@ -826,11 +837,17 @@ app.post('/api/admin/products', verifyAdminToken, async (req, res) => {
 app.put('/api/admin/products/:id', verifyAdminToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, price, category, texture, scent, stock, image } = req.body;
+    const { name, description, price, category, texture, scent, stock, image, images } = req.body;
 
     const prodRef = db.collection('products').doc(id);
     const snap = await prodRef.get();
     if (!snap.exists) return res.status(404).json({ error: 'Product not found' });
+
+    // Normalise the images array — accept both the new multi-image field and the
+    // legacy single image string so older clients keep working.
+    const imagesArray = Array.isArray(images) && images.length > 0
+      ? images
+      : (image ? [image] : null); // null = don't touch existing array if nothing was sent
 
     const updates = {
       name,
@@ -842,9 +859,19 @@ app.put('/api/admin/products/:id', verifyAdminToken, async (req, res) => {
       stock: parseInt(stock || '0'),
       updatedAt: new Date()
     };
-    // Only overwrite image if a new URL was provided
-    if (image) updates.image = image;
 
+    // Only overwrite image fields when the client actually sent media
+    if (image) updates.image = image;
+    if (imagesArray !== null) {
+      updates.images = imagesArray;
+      // Keep the legacy field in sync with the first image/non-video in the array
+      if (!image) {
+        updates.image = imagesArray[0] ||
+          'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80';
+      }
+    }
+
+    console.log(`[Backend PUT /api/admin/products/${id}] Updating with ${imagesArray ? imagesArray.length : 0} media item(s)`);
     await prodRef.update(updates);
     return res.status(200).json({ success: true, message: 'Product updated successfully' });
   } catch (err) {
