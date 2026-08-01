@@ -161,7 +161,8 @@ function ProductsSection({ authFetch }) {
     if (!files.length) return;
     const newSlots = files.map(file => {
       const preview = URL.createObjectURL(file);
-      return { preview, file, url: '' };
+      const type = file.type.startsWith('video/') ? 'video' : 'image';
+      return { preview, file, url: '', type };
     });
     setImageSlots(prev => [...prev, ...newSlots]);
     // Reset input so same files can be re-selected if needed
@@ -175,7 +176,8 @@ function ProductsSection({ authFetch }) {
   const addImageByUrl = () => {
     const url = form.imageUrl?.trim();
     if (!url) return;
-    setImageSlots(prev => [...prev, { preview: url, file: null, url }]);
+    const type = (url.includes('/video/upload/') || url.match(/\.(mp4|webm|ogg|mov|avi|mkv)($|\?)/i)) ? 'video' : 'image';
+    setImageSlots(prev => [...prev, { preview: url, file: null, url, type }]);
     setForm(f => ({ ...f, imageUrl: '' }));
   };
 
@@ -195,7 +197,10 @@ function ProductsSection({ authFetch }) {
     const existingImages = Array.isArray(product.images) && product.images.length > 0
       ? product.images
       : product.image ? [product.image] : [];
-    setImageSlots(existingImages.map(url => ({ preview: url, file: null, url })));
+    setImageSlots(existingImages.map(url => {
+      const type = (url.includes('/video/upload/') || url.match(/\.(mp4|webm|ogg|mov|avi|mkv)($|\?)/i)) ? 'video' : 'image';
+      return { preview: url, file: null, url, type };
+    }));
     setShowForm(true);
   };
 
@@ -218,26 +223,33 @@ function ProductsSection({ authFetch }) {
     setUploadProgress(null);
 
     try {
-      // ---- Step 1: Upload any file-based images to Cloudinary ----
+      // ---- Step 1: Upload any file-based images/videos to Cloudinary ----
       const resolvedImages = [];
+      const filesToUpload = imageSlots.filter(s => s.file);
+      let uploadIndex = 0;
       for (let i = 0; i < imageSlots.length; i++) {
         const slot = imageSlots[i];
         if (slot.file) {
-          toast.loading(`Uploading image ${i + 1} of ${imageSlots.filter(s => s.file).length}...`, { id: 'img-upload' });
+          uploadIndex++;
+          const isVideo = slot.type === 'video';
+          toast.loading(`Uploading ${isVideo ? 'video' : 'image'} ${uploadIndex} of ${filesToUpload.length}...`, { id: 'media-upload' });
           const formData = new FormData();
           formData.append('image', slot.file);
           const uploadRes = await authFetch('/api/admin/upload', { method: 'POST', body: formData });
-          if (!uploadRes.ok) throw new Error(`Image ${i + 1} upload failed`);
+          if (!uploadRes.ok) {
+            toast.dismiss('media-upload');
+            throw new Error(`${isVideo ? 'Video' : 'Image'} ${uploadIndex} upload failed`);
+          }
           const uploadData = await uploadRes.json();
           resolvedImages.push(uploadData.url);
-          toast.dismiss('img-upload');
+          toast.dismiss('media-upload');
         } else if (slot.url) {
           resolvedImages.push(slot.url);
         }
       }
 
-      // Fallback if no images at all, keep existing or use placeholder
-      const primaryImage = resolvedImages[0] || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80';
+      // Find first image for the legacy thumbnail field
+      const firstImageUrl = resolvedImages.find(url => !(url.includes('/video/upload/') || url.match(/\.(mp4|webm|ogg|mov|avi|mkv)($|\?)/i))) || resolvedImages[0] || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80';
 
       // ---- Step 2: Prepare product payload ----
       const productPayload = {
@@ -248,7 +260,7 @@ function ProductsSection({ authFetch }) {
         texture: form.texture || '',
         scent: form.scent || '',
         stock: parseInt(form.stock, 10) || 0,
-        image: primaryImage,          // legacy field — keeps existing products working
+        image: firstImageUrl,          // legacy field — keeps existing products working
         images: resolvedImages,       // new multi-image field
         updatedAt: new Date().toISOString()
       };
@@ -415,29 +427,36 @@ function ProductsSection({ authFetch }) {
                   rows={3} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-medium focus:outline-none focus:border-cyan-400 resize-none" />
               </div>
 
-              {/* Multi-image upload */}
+              {/* Multi-image/video upload */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 mb-2">
-                  Product Images
-                  <span className="ml-2 text-cyan-500 font-normal normal-case">Up to 6 images — first is the main photo</span>
+                  Product Media (Images &amp; Videos)
+                  <span className="ml-2 text-cyan-500 font-normal normal-case">Up to 6 files — first image will be the main photo</span>
                 </label>
 
-                {/* Image strip */}
+                {/* Media strip */}
                 {imageSlots.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-3">
-                    {imageSlots.map((slot, idx) => (
-                      <div key={idx} className="relative group">
-                        <img src={slot.preview} alt={`img-${idx}`} className="w-20 h-20 object-cover rounded-xl border border-slate-200 shrink-0" />
-                        {idx === 0 && (
-                          <span className="absolute bottom-0 left-0 right-0 text-center text-[8px] font-black bg-cyan-400 text-white rounded-b-xl py-0.5">MAIN</span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => removeImageSlot(idx)}
-                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs font-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                        >×</button>
-                      </div>
-                    ))}
+                    {imageSlots.map((slot, idx) => {
+                      const isVideo = slot.type === 'video' || (slot.url && (slot.url.includes('/video/upload/') || slot.url.match(/\.(mp4|webm|ogg|mov|avi|mkv)($|\?)/i)));
+                      return (
+                        <div key={idx} className="relative group">
+                          {isVideo ? (
+                            <video src={slot.preview} className="w-20 h-20 object-cover rounded-xl border border-slate-200 shrink-0 bg-slate-900" muted playsInline />
+                          ) : (
+                            <img src={slot.preview} alt={`img-${idx}`} className="w-20 h-20 object-cover rounded-xl border border-slate-200 shrink-0" />
+                          )}
+                          {idx === 0 && (
+                            <span className="absolute bottom-0 left-0 right-0 text-center text-[8px] font-black bg-cyan-400 text-white rounded-b-xl py-0.5">MAIN</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeImageSlot(idx)}
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs font-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >×</button>
+                        </div>
+                      );
+                    })}
                     {imageSlots.length < 6 && (
                       <button type="button" onClick={() => fileInputRef.current?.click()}
                         className="w-20 h-20 border-2 border-dashed border-slate-200 hover:border-cyan-400 rounded-xl flex items-center justify-center text-slate-400 hover:text-cyan-500 transition-all text-2xl font-light">
@@ -451,10 +470,10 @@ function ProductsSection({ authFetch }) {
                   {imageSlots.length === 0 && (
                     <button type="button" onClick={() => fileInputRef.current?.click()}
                       className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:border-cyan-400 rounded-xl text-xs font-bold text-slate-600 transition-all">
-                      <Upload className="w-4 h-4" /> Upload Images
+                      <Upload className="w-4 h-4" /> Upload Media
                     </button>
                   )}
-                  <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileChange} className="hidden" />
+                  <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple onChange={handleFileChange} className="hidden" />
                   <p className="text-[10px] text-slate-400 font-semibold">— or paste URL —</p>
                   <div className="flex gap-1 flex-1">
                     <input type="url" placeholder="https://..." value={form.imageUrl}

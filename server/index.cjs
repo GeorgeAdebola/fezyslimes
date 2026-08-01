@@ -118,20 +118,31 @@ function verifyAdminToken(req, res, next) {
 // survives redeploys on any hosting platform.
 app.post('/api/admin/upload', verifyAdminToken, upload.single('image'), async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ error: 'No image file provided' });
+    return res.status(400).json({ error: 'No file provided' });
   }
 
   try {
+    const isVideo = req.file.mimetype.startsWith('video/');
+    const uploadOptions = {
+      folder: 'fezyslimes/products',
+      resource_type: isVideo ? 'video' : 'image',
+    };
+
+    if (isVideo) {
+      uploadOptions.allowed_formats = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'ogv'];
+      uploadOptions.transformation = [
+        { quality: 'auto', fetch_format: 'auto' }
+      ];
+    } else {
+      uploadOptions.allowed_formats = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+      uploadOptions.transformation = [
+        { width: 800, height: 800, crop: 'limit', quality: 'auto:good', fetch_format: 'auto' }
+      ];
+    }
+
     const uploadResult = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
-        {
-          folder: 'fezyslimes/products',
-          resource_type: 'image',
-          allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
-          transformation: [
-            { width: 800, height: 800, crop: 'limit', quality: 'auto:good', fetch_format: 'auto' }
-          ]
-        },
+        uploadOptions,
         (error, result) => {
           if (error) return reject(error);
           resolve(result);
@@ -144,7 +155,7 @@ app.post('/api/admin/upload', verifyAdminToken, upload.single('image'), async (r
     res.status(200).json({ url: uploadResult.secure_url });
   } catch (error) {
     console.error('[Cloudinary Upload Error]:', error.message);
-    res.status(500).json({ error: 'Failed to upload image to Cloudinary. Check CLOUDINARY_* env vars.' });
+    res.status(500).json({ error: 'Failed to upload file to Cloudinary. Check CLOUDINARY_* env vars.' });
   }
 });
 

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ShoppingCart, Sparkles, Smile, ChevronLeft, ChevronRight } from 'lucide-react';
+import { optimizeCloudinaryUrl } from './services/productService';
 
 // Image gallery slider with arrow nav + dot indicators + swipe support
 function ImageGallery({ images }) {
@@ -21,25 +22,47 @@ function ImageGallery({ images }) {
 
   if (total === 0) return null;
 
+  const rawUrl = images[current];
+  const url = optimizeCloudinaryUrl(rawUrl, 800);
+  const isVideo = rawUrl && (rawUrl.includes('/video/upload/') || rawUrl.match(/\.(mp4|webm|ogg|mov|avi|mkv)($|\?)/i));
+
   return (
     <div
       className="relative h-full w-full overflow-hidden bg-slate-50 select-none"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {/* Images */}
+      {/* Media (Images or Videos) */}
       <AnimatePresence mode="wait" initial={false}>
-        <motion.img
-          key={current}
-          src={images[current]}
-          alt={`Product image ${current + 1}`}
-          className="absolute inset-0 w-full h-full object-cover"
-          initial={{ opacity: 0, x: 30 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -30 }}
-          transition={{ duration: 0.22 }}
-          draggable={false}
-        />
+        {isVideo ? (
+          <motion.video
+            key={current}
+            src={url}
+            controls
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            className="absolute inset-0 w-full h-full object-cover bg-black"
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -30 }}
+            transition={{ duration: 0.22 }}
+          />
+        ) : (
+          <motion.img
+            key={current}
+            src={url}
+            alt={`Product media ${current + 1}`}
+            className="absolute inset-0 w-full h-full object-cover"
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -30 }}
+            transition={{ duration: 0.22 }}
+            draggable={false}
+          />
+        )}
       </AnimatePresence>
 
       {/* Gradient overlay */}
@@ -109,7 +132,7 @@ export default function ProductQuickView({ product, isOpen, onClose, onAddToCart
           {/* Modal Content */}
           <motion.div 
             initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="relative bg-white/90 backdrop-blur-xl border border-white rounded-[3rem] w-full max-w-2xl overflow-hidden shadow-2xl shadow-pink-100/50 flex flex-col md:flex-row z-10"
+            className="relative bg-white/90 backdrop-blur-xl border border-white rounded-[3rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl shadow-pink-100/50 flex flex-col md:flex-row z-10"
           >
             {/* Close Button */}
             <button 

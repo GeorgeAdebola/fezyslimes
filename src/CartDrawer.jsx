@@ -26,6 +26,7 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
   const [notes, setNotes] = useState('');
   const [selectedCourier, setSelectedCourier] = useState('Uber');
   const [rates, setRates] = useState([]);
+  const [selectedZoneKey, setSelectedZoneKey] = useState('');
   
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [createdOrderId, setCreatedOrderId] = useState('');
@@ -71,7 +72,7 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
         if (defaultAddr) {
           setFullName(defaultAddr.fullName || '');
           setPhone(defaultAddr.phone || '');
-          setSelectedState(defaultAddr.state || shippingLocations[0].name);
+          setSelectedState(defaultAddr.state || 'Lagos');
           setCity(defaultAddr.city || '');
           setStreetAddress(defaultAddr.address || '');
           setLandmark(defaultAddr.landmark || '');
@@ -87,28 +88,16 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
     prefillDefaultAddress();
   }, [currentUser, isOpen]);
 
-  // Build unique state list and allowed states from fetched zones
-  const uniqueStates = [...new Set((Array.isArray(rates) ? rates : []).map(z => z.state).filter(Boolean))];
-  const ALLOWED_STATES = uniqueStates.length > 0 ? uniqueStates : [
-    'Lagos', 'Ogun State', 'Oyo State', 'Abuja (FCT)', 'Port Harcourt / Rivers State'
-  ];
-  const isStateSupported = ALLOWED_STATES.includes(selectedState);
+  const isStateSupported = selectedZoneKey !== '' && selectedZoneKey !== 'Other';
+
+  // Derive the selected zone object for easy access
+  const selectedZoneObj = isStateSupported ? (Array.isArray(rates) ? rates : []).find(z => z.key === selectedZoneKey) : null;
 
   const getDeliveryFee = () => {
     if (!isStateSupported) return 0;
-    const zonesArr = Array.isArray(rates) ? rates : [];
-    // For Lagos, match by both state and courier
-    if (selectedState === 'Lagos') {
-      const match = zonesArr.find(z => z.state === 'Lagos' && z.courier === selectedCourier);
-      return match ? match.rate : 0;
-    }
-    // For other states, pick first matching zone
-    const match = zonesArr.find(z => z.state === selectedState);
+    const match = (Array.isArray(rates) ? rates : []).find(z => z.key === selectedZoneKey);
     return match ? match.rate : 0;
   };
-
-  // Lagos courier options from zones
-  const lagosZones = (Array.isArray(rates) ? rates : []).filter(z => z.state === 'Lagos');
 
   const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
   const shippingCost = getDeliveryFee();
@@ -134,7 +123,8 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
   const handleBack = () => setCurrentStep(prev => Math.max(prev - 1, 0));
 
   const isDetailsValid = fullName.trim() !== '' && email.trim() !== '' && phone.trim() !== '';
-  const isShippingValid = isStateSupported && city.trim() !== '' && streetAddress.trim() !== '';
+  // Must have a zone selected, city, and street address
+  const isShippingValid = isStateSupported && selectedZoneKey !== '' && city.trim() !== '' && streetAddress.trim() !== '';
   
   const isPaymentAllowed = isDetailsValid && isShippingValid && cartItems.length > 0;
 
@@ -159,8 +149,8 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
           notes,
           total,
           items: cartItems,
-          selectedZone: selectedState,
-          selectedCourier: selectedState === 'Lagos' ? selectedCourier : 'DHL',
+          selectedZone: selectedZoneObj?.label || selectedState,
+          selectedCourier: selectedZoneObj?.courier || selectedCourier || 'DHL',
           deliveryFee: shippingCost
         })
       });
@@ -313,24 +303,60 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                 {/* STEP 2: SHIPPING */}
                 {currentStep === 2 && (
                   <motion.div key="step-2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="p-6 space-y-8">
+
+                    {/* Delivery Zone Picker */}
                     <div>
-                      <h3 className="text-xl font-black text-slate-800 border-b border-slate-100 pb-2 mb-4">Shipping Address <span className="text-red-400">*</span></h3>
+                      <h3 className="text-xl font-black text-slate-800 border-b border-slate-100 pb-2 mb-4">Select Delivery Zone <span className="text-red-400">*</span></h3>
+                      {rates.length === 0 ? (
+                        <p className="text-xs text-slate-400 font-semibold">Loading delivery zones…</p>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                          {rates.map(zone => {
+                            const isSelected = selectedZoneKey === zone.key;
+                            return (
+                              <button
+                                type="button"
+                                key={zone.key}
+                                onClick={() => {
+                                  setSelectedZoneKey(zone.key);
+                                  setSelectedState(zone.state);
+                                  setSelectedCourier(zone.courier || 'DHL');
+                                }}
+                                className={`text-left border rounded-2xl p-4 transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'border-cyan-400 bg-cyan-50 shadow-md shadow-cyan-100'
+                                    : 'border-slate-200 bg-white hover:border-cyan-300 hover:bg-cyan-50/40'
+                                }`}
+                              >
+                                <div className="flex justify-between items-start mb-1">
+                                  <span className={`font-bold text-sm leading-tight ${isSelected ? 'text-cyan-700' : 'text-slate-800'}`}>
+                                    {zone.label}
+                                  </span>
+                                  {isSelected && <CheckCircle2 className="w-4 h-4 text-cyan-500 shrink-0 mt-0.5" />}
+                                </div>
+                                <p className={`text-xs font-semibold ${isSelected ? 'text-cyan-600' : 'text-slate-500'}`}>
+                                  ₦{(zone.rate || 0).toLocaleString()} • {zone.courier}
+                                </p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {!selectedZoneKey && (
+                        <p className="text-xs text-amber-600 font-bold mt-3">⚠ Please select a delivery zone to continue.</p>
+                      )}
+                    </div>
+
+                    {/* Address Fields */}
+                    <div>
+                      <h3 className="text-xl font-black text-slate-800 border-b border-slate-100 pb-2 mb-4">Delivery Address <span className="text-red-400">*</span></h3>
                       <div className="space-y-4">
                         <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">State</label>
-                          <select required value={selectedState} onChange={(e) => { setSelectedState(e.target.value); setSelectedCourier('DHL'); }} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 outline-none font-medium transition-all appearance-none">
-                            {ALLOWED_STATES.map(s => (
-                              <option key={s} value={s}>{s}</option>
-                            ))}
-                            <option value="Other">Other (Unsupported)</option>
-                          </select>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">City / Area</label>
+                          <input type="text" required value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Lekki" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 outline-none font-medium transition-all" />
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">City</label>
-                          <input type="text" required value={city} onChange={(e) => setCity(e.target.value)} placeholder="Ikeja" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 outline-none font-medium transition-all" />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Full Delivery Address</label>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Full Street Address</label>
                           <textarea required value={streetAddress} onChange={(e) => setStreetAddress(e.target.value)} placeholder="123 Slime Street, Apartment 4B" rows={2} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 outline-none font-medium transition-all resize-none" />
                         </div>
                         <div>
@@ -340,47 +366,6 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                       </div>
                     </div>
 
-                    {selectedState === 'Other' && (
-                      <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-red-600 text-xs font-black leading-relaxed">
-                        Sorry, we currently only deliver to Lagos, Ogun State, Oyo State, Abuja, and Port Harcourt.
-                      </div>
-                    )}
-
-                    <div>
-                      <h3 className="text-xl font-black text-slate-800 border-b border-slate-100 pb-2 mb-4">Delivery Courier <span className="text-red-400">*</span></h3>
-                      {selectedState === 'Lagos' ? (
-                        lagosZones.length > 0 ? (
-                          <div className="grid grid-cols-2 gap-4">
-                            {lagosZones.map(zone => (
-                              <div key={zone.key} onClick={() => setSelectedCourier(zone.courier)} className={`border rounded-2xl p-4 cursor-pointer transition-all ${selectedCourier === zone.courier ? 'border-cyan-400 bg-cyan-50/50' : 'border-slate-200 hover:border-cyan-200'}`}>
-                                <div className="flex justify-between items-center mb-1">
-                                  <span className="font-bold text-slate-800 text-sm">{zone.label.replace('Lagos', '').replace(/[()]/g, '').trim() || zone.courier}</span>
-                                  {selectedCourier === zone.courier && <CheckCircle2 className="w-4 h-4 text-cyan-500" />}
-                                </div>
-                                <p className="text-xs text-slate-500 font-semibold">Flat Rate: ₦{(zone.rate || 0).toLocaleString()}</p>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-2 gap-4">
-                            <div onClick={() => setSelectedCourier('Uber')} className={`border rounded-2xl p-4 cursor-pointer transition-all ${selectedCourier === 'Uber' ? 'border-cyan-400 bg-cyan-50/50' : 'border-slate-200 hover:border-cyan-200'}`}>
-                              <span className="font-bold text-slate-800 text-sm block">Uber Courier</span>
-                              <p className="text-xs text-slate-500 font-semibold">Flat Rate: ₦{getDeliveryFee().toLocaleString()}</p>
-                            </div>
-                          </div>
-                        )
-                      ) : isStateSupported ? (
-                        <div className="border border-cyan-400 bg-cyan-50/50 rounded-2xl p-4 flex justify-between items-center">
-                          <div>
-                            <span className="font-bold text-slate-800 text-sm block">DHL Express</span>
-                            <span className="text-xs text-slate-500 font-semibold">Flat Rate manual dispatch</span>
-                          </div>
-                          <span className="font-black text-slate-800 text-base">₦{getDeliveryFee().toLocaleString()}</span>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-red-500 font-black">Please select a supported state to see courier options.</p>
-                      )}
-                    </div>
                   </motion.div>
                 )}
 
@@ -396,7 +381,7 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                           <span className="font-bold text-slate-800">₦{subtotal.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Shipping Fee ({selectedState === 'Lagos' ? selectedCourier : 'DHL'})</span>
+                          <span>Shipping ({selectedZoneObj?.label || selectedZoneObj?.courier || selectedCourier})</span>
                           <span className="font-bold text-slate-800">₦{shippingCost.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between border-t border-slate-200 pt-4 text-lg">
@@ -478,9 +463,9 @@ export default function CartDrawer({ isOpen, onClose, cartItems, onUpdateQuantit
                         <span className="text-slate-800 font-black">₦{total.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-slate-500 font-bold">Courier Assigned:</span>
+                        <span className="text-slate-500 font-bold">Delivery Zone:</span>
                         <span className="text-cyan-600 font-black">
-                          {selectedState === 'Lagos' ? selectedCourier : 'DHL'}
+                          {selectedZoneObj?.label || selectedState}
                         </span>
                       </div>
                     </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Outlet, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './AuthContext';
@@ -15,12 +15,15 @@ import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
 import VerifyEmail from './pages/VerifyEmail';
 import ConfirmOrder from './pages/ConfirmOrder';
-import AdminLogin from './pages/admin/AdminLogin';
-import AdminDashboard from './pages/admin/index';
-import PrivacyPolicy from './pages/legal/PrivacyPolicy';
-import TermsAndConditions from './pages/legal/TermsAndConditions';
-import RefundPolicy from './pages/legal/RefundPolicy';
-import FAQ from './pages/legal/FAQ';
+
+// Lazy load heavy admin routes & legal info pages
+const AdminLogin = lazy(() => import('./pages/admin/AdminLogin'));
+const AdminDashboard = lazy(() => import('./pages/admin/index'));
+const PrivacyPolicy = lazy(() => import('./pages/legal/PrivacyPolicy'));
+const TermsAndConditions = lazy(() => import('./pages/legal/TermsAndConditions'));
+const RefundPolicy = lazy(() => import('./pages/legal/RefundPolicy'));
+const FAQ = lazy(() => import('./pages/legal/FAQ'));
+
 import { reviews } from './data'; // reviews are static UI content, not Firestore data
 import { getWishlist, updateWishlist } from './services/dbService';
 import { fetchProducts } from './services/productService';
@@ -289,26 +292,32 @@ export default function App() {
   return (
     <AuthProvider>
       <Router>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Home />} />
-            <Route path="track-order" element={<OrderTracking />} />
-            <Route path="account" element={<CustomerDashboard />} />
-            <Route path="login" element={<Login />} />
-            <Route path="signup" element={<Signup />} />
-            <Route path="forgot-password" element={<ForgotPassword />} />
-            <Route path="verify-email" element={<VerifyEmail />} />
-            <Route path="confirm-order" element={<ConfirmOrder />} />
-            {/* Legal pages */}
-            <Route path="privacy-policy" element={<PrivacyPolicy />} />
-            <Route path="terms" element={<TermsAndConditions />} />
-            <Route path="refund-policy" element={<RefundPolicy />} />
-            <Route path="faq" element={<FAQ />} />
-          </Route>
-          {/* Admin routes (standalone, no main layout/navbar) */}
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<AdminLogin />} />
-        </Routes>
+        <Suspense fallback={
+          <div className="fixed inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-50">
+            <div className="w-10 h-10 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+          </div>
+        }>
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<Home />} />
+              <Route path="track-order" element={<OrderTracking />} />
+              <Route path="account" element={<CustomerDashboard />} />
+              <Route path="login" element={<Login />} />
+              <Route path="signup" element={<Signup />} />
+              <Route path="forgot-password" element={<ForgotPassword />} />
+              <Route path="verify-email" element={<VerifyEmail />} />
+              <Route path="confirm-order" element={<ConfirmOrder />} />
+              {/* Legal pages */}
+              <Route path="privacy-policy" element={<PrivacyPolicy />} />
+              <Route path="terms" element={<TermsAndConditions />} />
+              <Route path="refund-policy" element={<RefundPolicy />} />
+              <Route path="faq" element={<FAQ />} />
+            </Route>
+            {/* Admin routes (standalone, no main layout/navbar) */}
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/login" element={<AdminLogin />} />
+          </Routes>
+        </Suspense>
       </Router>
     </AuthProvider>
   );

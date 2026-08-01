@@ -55,7 +55,7 @@ const IconSnapchat = ({ className = 'w-4 h-4' }) => (
 import { useOutletContext } from 'react-router-dom';
 import { categories } from '../data';
 import CustomerReviews from '../components/CustomerReviews';
-import { fetchProducts, API_BASE } from '../services/productService';
+import { fetchProducts, API_BASE, optimizeCloudinaryUrl } from '../services/productService';
 import toast from 'react-hot-toast';
 
 import productVideo from '../assets/5992522466562415265.mp4';
@@ -242,10 +242,10 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setIsVideoModalOpen(false)}
-                className="absolute -top-12 right-0 sm:-right-12 sm:top-0 text-white/80 hover:text-white p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full transition-all z-20 hover:rotate-90 duration-300"
+                className="absolute top-4 right-4 sm:-right-12 sm:top-0 text-white/80 hover:text-white p-2.5 bg-slate-900/50 sm:bg-white/10 sm:hover:bg-white/20 backdrop-blur-md rounded-full transition-all z-20 hover:rotate-90 duration-300"
                 aria-label="Close video lightbox"
               >
-                <X className="w-7 h-7 text-white" />
+                <X className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
               </button>
 
               {/* Video Wrapper */}
@@ -267,7 +267,7 @@ export default function Home() {
       </AnimatePresence>
 
       {/* Combined Shop & Textures Section */}
-      <section id="shop" className="py-24 relative">
+      <section id="shop" className="py-12 sm:py-20 md:py-24 relative">
         <div className="max-w-7xl mx-auto px-6 relative z-10">
           
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
@@ -363,10 +363,14 @@ export default function Home() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
               {filteredProducts.map((prod, i) => {
                 const isOutOfStock = (prod.stock ?? 1) <= 0;
+                const firstImage = optimizeCloudinaryUrl(
+                  (Array.isArray(prod.images) && prod.images.find(url => !(url.includes('/video/upload/') || url.match(/\.(mp4|webm|ogg|mov|avi|mkv)($|\?)/i)))) || prod.image || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80',
+                  600
+                );
                 return (
                   <motion.div key={prod.id} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} transition={{ delay: i * 0.05 }} className="bg-white/70 backdrop-blur-md border border-white rounded-[2rem] overflow-hidden shadow-xl shadow-teal-50/50 hover:shadow-pink-100/60 flex flex-col justify-between group transition-all duration-300 hover:-translate-y-2">
                     <div className="relative h-80 overflow-hidden bg-slate-100">
-                      <img src={prod.image} alt={prod.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                      <img src={firstImage} alt={prod.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                       
                       {/* Out of Stock badge */}
                       {isOutOfStock && (
@@ -419,7 +423,7 @@ export default function Home() {
       </section>
 
       {/* About Section */}
-      <section id="about" className="py-24 relative">
+      <section id="about" className="py-12 sm:py-20 md:py-24 relative">
         <div className="max-w-7xl mx-auto px-6 relative z-10">
           <div className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-[3rem] p-8 lg:p-16 shadow-2xl shadow-pink-100/50">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
@@ -463,7 +467,7 @@ export default function Home() {
       </section>
 
       {/* Slime Care Guidelines */}
-      <section id="care" className="py-24 relative">
+      <section id="care" className="py-12 sm:py-20 md:py-24 relative">
         <div className="max-w-7xl mx-auto px-6 relative z-10">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} className="text-center max-w-xl mx-auto mb-16 space-y-4">
             <h2 className="text-3xl sm:text-5xl font-black text-slate-800">Slime Care Guide</h2>
@@ -517,7 +521,7 @@ export default function Home() {
       </section>
 
       {/* Reviews */}
-      <section id="reviews" className="py-24 relative">
+      <section id="reviews" className="py-12 sm:py-20 md:py-24 relative">
         <div className="max-w-4xl mx-auto px-6 relative z-10">
           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} className="text-center mb-12">
             <h2 className="text-3xl sm:text-5xl font-black text-slate-800">Customer Reviews</h2>
@@ -537,7 +541,7 @@ export default function Home() {
       </section>
 
       {/* Contact Section */}
-      <section id="contact" className="py-24 relative">
+      <section id="contact" className="py-12 sm:py-20 md:py-24 relative">
         <div className="max-w-7xl mx-auto px-6 relative z-10">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 bg-white/60 backdrop-blur-xl border border-white/80 rounded-[3rem] p-8 lg:p-12 shadow-2xl shadow-pink-100/40">
             

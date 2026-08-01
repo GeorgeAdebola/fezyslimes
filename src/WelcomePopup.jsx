@@ -58,7 +58,7 @@ export default function WelcomePopup() {
             animate={{ opacity: 1, scale: 1, y: 0 }} 
             exit={{ opacity: 0, scale: 0.95, y: 30 }} 
             transition={{ type: "spring", damping: 25, stiffness: 350 }}
-            className="relative bg-white/95 border border-white rounded-[2rem] w-full max-w-3xl shadow-2xl shadow-pink-200/40 flex flex-col z-10 overflow-hidden"
+            className="relative bg-white/95 border border-white rounded-[2rem] w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl shadow-pink-200/40 flex flex-col z-10"
           >
             {/* Soft pink/turquoise glow background */}
             <div className="absolute inset-0 bg-gradient-to-br from-teal-50/50 via-transparent to-pink-50/50 pointer-events-none" />
@@ -66,7 +66,7 @@ export default function WelcomePopup() {
             {/* Close Button */}
             <button 
               onClick={handleClose}
-              className="absolute top-5 right-5 z-20 p-2 text-slate-400 hover:text-pink-500 hover:bg-slate-50 rounded-full transition-all border border-transparent hover:border-pink-100 shadow-sm"
+              className="absolute top-4 right-4 z-30 p-2.5 bg-white/90 hover:bg-white text-slate-400 hover:text-pink-500 rounded-full transition-all border border-slate-200 shadow-sm"
             >
               <X className="w-5 h-5" />
             </button>

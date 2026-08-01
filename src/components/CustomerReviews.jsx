@@ -27,6 +27,7 @@ const allItems = [...imageItems, ...videoItems];
 
 function ReviewVideo({ src }) {
   const videoRef = useRef(null);
+  const [isIntersected, setIsIntersected] = useState(false);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -36,6 +37,7 @@ function ReviewVideo({ src }) {
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
+            setIsIntersected(true);
             el.play().catch((err) => {
               console.error('[ReviewVideo] Autoplay failed:', err);
             });
@@ -44,7 +46,7 @@ function ReviewVideo({ src }) {
           }
         });
       },
-      { threshold: 0.45 }
+      { threshold: 0.2 }
     );
 
     observer.observe(el);
@@ -54,12 +56,12 @@ function ReviewVideo({ src }) {
   return (
     <video
       ref={videoRef}
-      src={src}
+      src={isIntersected ? src : undefined}
       className="h-full w-full object-cover"
       loop
       muted
       playsInline
-      preload="metadata"
+      preload="none"
       onError={(e) => console.error('[ReviewVideo] Load error:', e, src)}
     />
   );
@@ -194,9 +196,9 @@ export default function CustomerReviews() {
               <button
                 type="button"
                 onClick={() => setSelectedItem(null)}
-                className="absolute -top-12 right-0 sm:-right-12 sm:top-0 text-white/70 hover:text-white p-2 transition-colors z-20 hover:rotate-90 duration-300"
+                className="absolute top-4 right-4 sm:-right-12 sm:top-0 text-white/80 hover:text-white p-2.5 bg-slate-900/50 sm:bg-transparent rounded-full transition-colors z-20 hover:rotate-90 duration-300"
               >
-                <X className="w-8 h-8" />
+                <X className="w-6 h-6 sm:w-8 sm:h-8" />
               </button>
 
               {allItems.length > 1 && (

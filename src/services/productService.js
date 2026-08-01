@@ -85,3 +85,35 @@ export const fetchProductById = async (id) => {
   }
   throw new Error('Product not found.');
 };
+
+/**
+ * Dynamically optimizes Cloudinary image/video URLs with auto quality, auto format, and width scaling.
+ * @param {string} url - Cloudinary URL
+ * @param {number} [width] - Target width in pixels (only applies to images)
+ * @returns {string} Optimized URL
+ */
+export const optimizeCloudinaryUrl = (url, width) => {
+  if (!url || typeof url !== 'string' || !url.includes('res.cloudinary.com')) return url;
+  
+  // If it already has transformations, don't modify it
+  if (url.includes('/image/upload/q_') || url.includes('/video/upload/q_') || url.includes('/upload/f_auto')) {
+    return url;
+  }
+  
+  // Detect image vs video upload
+  const isVideo = url.includes('/video/upload/') || url.match(/\.(mp4|webm|ogg|mov|avi|mkv)($|\?)/i);
+  const uploadToken = isVideo ? '/video/upload/' : '/image/upload/';
+  const replacementToken = isVideo ? '/video/upload/f_auto,q_auto/' : `/image/upload/f_auto,q_auto${width ? `,w_${width}` : ''}/`;
+  
+  if (url.includes(uploadToken)) {
+    return url.replace(uploadToken, replacementToken);
+  }
+  
+  // Generic fallback if path structure is slightly different (e.g. /upload/)
+  if (url.includes('/upload/')) {
+    const genericReplacement = isVideo ? '/upload/f_auto,q_auto/' : `/upload/f_auto,q_auto${width ? `,w_${width}` : ''}/`;
+    return url.replace('/upload/', genericReplacement);
+  }
+  
+  return url;
+};

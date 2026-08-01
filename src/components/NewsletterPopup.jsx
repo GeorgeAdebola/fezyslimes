@@ -70,12 +70,12 @@ export default function NewsletterPopup() {
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="relative w-full max-w-[800px] bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row"
+            className="relative w-full max-w-[800px] max-h-[90vh] overflow-y-auto bg-white rounded-3xl shadow-2xl flex flex-col md:flex-row"
           >
             {/* Close Button */}
             <button 
               onClick={closePopup}
-              className="absolute top-4 right-4 z-10 p-2 bg-white/50 hover:bg-white/90 backdrop-blur-md rounded-full text-slate-500 hover:text-slate-800 transition-all"
+              className="absolute top-4 right-4 z-20 p-2.5 bg-white/90 hover:bg-white text-slate-500 hover:text-slate-800 border border-slate-200 shadow-sm rounded-full transition-all"
             >
               <X className="w-5 h-5" />
             </button>
