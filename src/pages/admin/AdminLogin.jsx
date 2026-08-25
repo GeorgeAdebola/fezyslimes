@@ -26,6 +26,7 @@ export default function AdminLogin() {
       const cleanUser = username.trim().toLowerCase();
       const cleanPass = password.trim();
       let token = null;
+      let backendReachable = false;
 
       // 1. Attempt backend verification with 8-second timeout
       const controller = new AbortController();
@@ -39,17 +40,23 @@ export default function AdminLogin() {
           signal: controller.signal
         });
         clearTimeout(timeoutId);
+        backendReachable = true;
 
         const data = await response.json().catch(() => ({}));
         if (response.ok && data.token) {
           token = data.token;
+        } else {
+          throw new Error(data.error || 'Invalid admin credentials. Please verify your email and password.');
         }
       } catch (backendErr) {
         clearTimeout(timeoutId);
+        if (backendReachable) {
+          throw backendErr;
+        }
         console.warn('Backend login endpoint unavailable or timed out, verifying locally:', backendErr);
       }
 
-      // 2. Client fallback verification
+      // 2. Client fallback verification (only if backend is offline/unreachable)
       if (!token) {
         const validCredentials = [
           { user: 'fezyslimes@gmail.com', pass: 'yyhllluu67668!!!' },
