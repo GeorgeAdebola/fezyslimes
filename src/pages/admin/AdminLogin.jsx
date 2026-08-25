@@ -25,63 +25,34 @@ export default function AdminLogin() {
     try {
       const cleanUser = username.trim().toLowerCase();
       const cleanPass = password.trim();
-      let token = null;
-      let backendReachable = false;
 
-      // 1. Attempt backend verification with 8-second timeout
+      // Attempt backend verification with a 15-second timeout (to handle Render server cold starts)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      try {
-        const response = await fetch(`${API_BASE}/api/admin/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: cleanUser, password: cleanPass }),
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        backendReachable = true;
+      const response = await fetch(`${API_BASE}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: cleanUser, password: cleanPass }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
 
-        const data = await response.json().catch(() => ({}));
-        if (response.ok && data.token) {
-          token = data.token;
-        } else {
-          throw new Error(data.error || 'Invalid admin credentials. Please verify your email and password.');
-        }
-      } catch (backendErr) {
-        clearTimeout(timeoutId);
-        if (backendReachable) {
-          throw backendErr;
-        }
-        console.warn('Backend login endpoint unavailable or timed out, verifying locally:', backendErr);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.token) {
+        throw new Error(data.error || 'Invalid admin credentials. Please verify your email and password.');
       }
 
-      // 2. Client fallback verification (only if backend is offline/unreachable)
-      if (!token) {
-        const validCredentials = [
-          { user: 'fezyslimes@gmail.com', pass: 'yyhllluu67668!!!' },
-          { user: 'admin_live_support@fezyslimes.com', pass: 'DEcGS/QPYRXJ/8jh' },
-          { user: 'admin@fezyslimes.com', pass: 'Admin@12345' },
-          { user: 'admin', pass: 'admin' }
-        ];
-
-        const isMatch = validCredentials.some(
-          cred => cred.user.toLowerCase() === cleanUser && cred.pass === cleanPass
-        );
-
-        if (isMatch) {
-          token = 'fezyslimes_admin_session_' + Date.now();
-        } else {
-          throw new Error('Invalid admin credentials. Please verify your email and password.');
-        }
-      }
-
-      localStorage.setItem('fezyslimes_admin_token', token);
+      localStorage.setItem('fezyslimes_admin_token', data.token);
       toast.success('Welcome to the Admin Panel! 🛡️');
       navigate('/admin');
     } catch (err) {
       console.error(err);
-      toast.error(err.message || 'Admin login failed.');
+      if (err.name === 'AbortError') {
+        toast.error('The server took too long to respond. Render may be waking up, please try again.');
+      } else {
+        toast.error(err.message || 'Admin login failed.');
+      }
     } finally {
       setIsLoading(false);
     }
