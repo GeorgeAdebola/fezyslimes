@@ -5,7 +5,8 @@ import {
   LayoutDashboard, Package, ShoppingBag, LogOut, Plus, Trash2, Edit2,
   X, Upload, CheckCircle2, AlertCircle, RefreshCw, Search, Filter,
   TrendingUp, Users, User, DollarSign, Clock, Shield, ChevronDown, Image as ImageIcon, Truck, Settings,
-  Eye, MapPin, Mail, Phone, ExternalLink, Calendar, Check, Copy, AlertTriangle, ArrowRight, CreditCard
+  Eye, MapPin, Mail, Phone, ExternalLink, Calendar, Check, Copy, AlertTriangle, ArrowRight, CreditCard,
+  Menu
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { ORDER_STATUSES } from '../../services/orderService';
@@ -1727,6 +1728,7 @@ function SettingsSection({ authFetch }) {
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const token = localStorage.getItem('fezyslimes_admin_token');
 
@@ -1771,10 +1773,20 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans flex">
+      {/* Mobile Sidebar Backdrop Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          onClick={() => setIsMobileMenuOpen(false)} 
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-20 md:hidden"
+        />
+      )}
+
       {/* Sidebar */}
-      <div className="w-64 shrink-0 bg-slate-900 text-white flex flex-col fixed inset-y-0 left-0 z-30">
+      <div className={`w-64 shrink-0 bg-slate-900 text-white flex flex-col fixed inset-y-0 left-0 z-30 transition-transform duration-300 ease-in-out md:translate-x-0 ${
+        isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
         {/* Brand */}
-        <div className="p-6 border-b border-white/10">
+        <div className="p-6 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-teal-600 flex items-center justify-center">
               <Shield className="w-5 h-5 text-white" />
@@ -1784,6 +1796,12 @@ export default function AdminDashboard() {
               <p className="text-slate-500 text-[11px] font-bold">Admin Panel</p>
             </div>
           </div>
+          <button 
+            onClick={() => setIsMobileMenuOpen(false)} 
+            className="md:hidden p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-all"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Nav */}
@@ -1793,7 +1811,10 @@ export default function AdminDashboard() {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setIsMobileMenuOpen(false);
+                }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${
                   activeTab === tab.id
                     ? 'bg-white/10 text-white'
@@ -1824,12 +1845,20 @@ export default function AdminDashboard() {
       </div>
 
       {/* Main Content */}
-      <div className="ml-64 flex-1 flex flex-col">
+      <div className="md:ml-64 flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-slate-100 px-8 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-black text-slate-800 capitalize">{activeTab}</h1>
-            <p className="text-xs font-medium text-slate-400">FezySlimes Admin Portal</p>
+        <header className="sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 sm:px-8 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsMobileMenuOpen(true)} 
+              className="md:hidden p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-all"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-lg font-black text-slate-800 capitalize">{activeTab}</h1>
+              <p className="text-xs font-medium text-slate-400">FezySlimes Admin Portal</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 border border-green-100 rounded-full">
@@ -1840,7 +1869,7 @@ export default function AdminDashboard() {
         </header>
 
         {/* Tab Content */}
-        <main className="flex-1 p-8">
+        <main className="flex-1 p-4 sm:p-8">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
             {activeTab === 'overview' && <OverviewSection authFetch={authFetch} />}
             {activeTab === 'products' && <ProductsSection authFetch={authFetch} />}
