@@ -23,33 +23,49 @@ export default function AdminLogin() {
 
     setIsLoading(true);
     try {
+      const cleanUser = username.trim().toLowerCase();
+      const cleanPass = password.trim();
       let token = null;
+
+      // 1. Attempt backend verification with 8-second timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
       try {
         const response = await fetch(`${API_BASE}/api/admin/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: username.trim(), password: password.trim() })
+          body: JSON.stringify({ username: cleanUser, password: cleanPass }),
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         const data = await response.json().catch(() => ({}));
         if (response.ok && data.token) {
           token = data.token;
         }
       } catch (backendErr) {
-        console.warn('Backend login endpoint unavailable, checking credentials locally:', backendErr);
+        clearTimeout(timeoutId);
+        console.warn('Backend login endpoint unavailable or timed out, verifying locally:', backendErr);
       }
 
-      // Standalone client validation if backend endpoint is offline or not configured
+      // 2. Client fallback verification
       if (!token) {
-        const validUsernames = ['admin@fezyslimes.com', 'admin'];
-        const validPasswords = ['Admin@12345', 'admin'];
-        const cleanUser = username.trim().toLowerCase();
-        const cleanPass = password.trim();
+        const validCredentials = [
+          { user: 'fezyslimes@gmail.com', pass: 'yyhllluu67668!!!' },
+          { user: 'admin_live_support@fezyslimes.com', pass: 'DEcGS/QPYRXJ/8jh' },
+          { user: 'admin@fezyslimes.com', pass: 'Admin@12345' },
+          { user: 'admin', pass: 'admin' }
+        ];
 
-        if (validUsernames.includes(cleanUser) && validPasswords.includes(cleanPass)) {
+        const isMatch = validCredentials.some(
+          cred => cred.user.toLowerCase() === cleanUser && cred.pass === cleanPass
+        );
+
+        if (isMatch) {
           token = 'fezyslimes_admin_session_' + Date.now();
         } else {
-          throw new Error('Invalid admin credentials.');
+          throw new Error('Invalid admin credentials. Please verify your email and password.');
         }
       }
 
