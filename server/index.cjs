@@ -443,9 +443,17 @@ app.post('/api/place-order', async (req, res) => {
 app.put('/api/admin/orders/:id/confirm-payment', verifyAdminToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const orderRef = db.collection('orders').doc(id);
-    const snap = await orderRef.get();
-    if (!snap.exists) return res.status(404).json({ error: 'Order not found.' });
+    let orderRef = db.collection('orders').doc(id);
+    let snap = await orderRef.get();
+    if (!snap.exists) {
+      const q = await db.collection('orders').where('orderId', '==', id).get();
+      if (!q.empty) {
+        orderRef = q.docs[0].ref;
+        snap = q.docs[0];
+      } else {
+        return res.status(404).json({ error: 'Order not found.' });
+      }
+    }
 
     await orderRef.update({
       paymentStatus: 'Paid',
@@ -456,17 +464,19 @@ app.put('/api/admin/orders/:id/confirm-payment', verifyAdminToken, async (req, r
     });
 
     const orderData = snap.data();
-    await sendEmail({
-      to: orderData.customer.email,
-      subject: `Payment Confirmed — FezySlimes Order ${orderData.orderId}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
-          <h2 style="color: #10b981; text-align: center;">Payment Confirmed! 💖</h2>
-          <p>Hi <strong>${orderData.customer.name}</strong>, we have confirmed your bank transfer for order <strong>${orderData.orderId}</strong>.</p>
-          <p>Your order is now <strong>confirmed and processing</strong>. We will update your tracking status as we prepare your slimes!</p>
-        </div>
-      `
-    });
+    if (orderData?.customer?.email) {
+      await sendEmail({
+        to: orderData.customer.email,
+        subject: `Payment Confirmed — FezySlimes Order ${orderData.orderId || id}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
+            <h2 style="color: #10b981; text-align: center;">Payment Confirmed! 💖</h2>
+            <p>Hi <strong>${orderData.customer.name || 'Valued Customer'}</strong>, we have confirmed your bank transfer for order <strong>${orderData.orderId || id}</strong>.</p>
+            <p>Your order is now <strong>confirmed and processing</strong>. We will update your tracking status as we prepare your slimes!</p>
+          </div>
+        `
+      });
+    }
 
     return res.status(200).json({ success: true });
   } catch (err) {
@@ -930,18 +940,35 @@ app.get('/api/admin/orders', verifyAdminToken, async (req, res) => {
 app.put('/api/admin/orders/:id/status', verifyAdminToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { trackingStatus, deliveryStatus, trackingId } = req.body;
-    const orderRef = db.collection('orders').doc(id);
+    const { trackingStatus, deliveryStatus, orderStatus, paymentStatus, trackingId } = req.body;
+    let orderRef = db.collection('orders').doc(id);
+    let snap = await orderRef.get();
+    if (!snap.exists) {
+      const q = await db.collection('orders').where('orderId', '==', id).get();
+      if (!q.empty) {
+        orderRef = q.docs[0].ref;
+        snap = q.docs[0];
+      } else {
+        return res.status(404).json({ error: 'Order not found' });
+      }
+    }
     
-    await orderRef.update({
-      trackingStatus,
-      deliveryStatus,
-      trackingId: trackingId !== undefined ? trackingId : null,
+    const updates = {
       updatedAt: FieldValue.serverTimestamp()
-    });
+    };
+    if (trackingStatus !== undefined) updates.trackingStatus = trackingStatus;
+    if (deliveryStatus !== undefined) updates.deliveryStatus = deliveryStatus;
+    else if (trackingStatus !== undefined) updates.deliveryStatus = trackingStatus;
+    if (orderStatus !== undefined) updates.orderStatus = orderStatus;
+    else if (trackingStatus !== undefined) updates.orderStatus = trackingStatus;
+    if (paymentStatus !== undefined) updates.paymentStatus = paymentStatus;
+    if (trackingId !== undefined) updates.trackingId = trackingId || null;
+    
+    await orderRef.update(updates);
     
     return res.status(200).json({ success: true, message: 'Order status updated' });
   } catch (err) {
+    console.error('[Update Order Status] Error:', err);
     return res.status(500).json({ error: 'Failed to update status' });
   }
 });
