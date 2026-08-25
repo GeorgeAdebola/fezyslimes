@@ -180,7 +180,7 @@ function Layout() {
       }
       return adjustCartForActivator(nextCart);
     });
-    setIsCartOpen(true);
+    toast.success('Added to cart! 🛒');
   };
 
   const handleUpdateQuantity = (productId, newQty) => {
@@ -237,16 +237,23 @@ function Layout() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-pink-200 selection:text-slate-900 overflow-x-hidden relative">
-      <Toaster position="top-center" toastOptions={{
-        style: {
-          background: 'rgba(255, 255, 255, 0.9)',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid #f1f5f9',
-          color: '#1e293b',
-          borderRadius: '16px',
-          boxShadow: '0 10px 15px -3px rgba(253, 164, 175, 0.1)'
-        }
-      }} />
+      <Toaster 
+        position="top-right" 
+        toastOptions={{
+          duration: 2500,
+          style: {
+            background: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid #f1f5f9',
+            color: '#1e293b',
+            borderRadius: '16px',
+            boxShadow: '0 10px 15px -3px rgba(253, 164, 175, 0.15)',
+            fontWeight: '700',
+            fontSize: '14px',
+            padding: '12px 16px'
+          }
+        }} 
+      />
       <WelcomePopup />
       <NewsletterPopup />
 

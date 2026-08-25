@@ -134,11 +134,12 @@ export default function Navbar({ cartCount, onCartClick, activeSection, scrollTo
             {/* Shopping Cart Toggle */}
             <button
               onClick={onCartClick}
+              aria-label={`Shopping Cart${cartCount > 0 ? ` (${cartCount} items)` : ''}`}
               className="p-2.5 bg-white hover:bg-cyan-50 border border-slate-100 text-slate-600 hover:text-cyan-500 shadow-sm rounded-xl transition-all relative flex items-center justify-center active:scale-95 hover:-translate-y-1"
             >
               <ShoppingCart className="w-5 h-5" />
               {cartCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-pink-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-sm animate-bounce">
+                <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 bg-pink-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-md shadow-pink-500/30 border-2 border-white pointer-events-none">
                   {cartCount}
                 </span>
               )}
